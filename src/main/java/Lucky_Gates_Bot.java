@@ -24,6 +24,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     String responseMsg = "";
     String callbackQueryId = "";
     int responseMsgId = 0;
+    int minimumNumberOfPlayers;
     int replier = 0;
     final String mongoDBUri;
     final String databaseName = "Lucky-Gates-Bot-Database";
@@ -34,7 +35,8 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     boolean shouldRunGame = false;
 
     // Constructor
-    public Lucky_Gates_Bot() {
+    public Lucky_Gates_Bot(int minimumNumberOfPlayers) {
+        this.minimumNumberOfPlayers = minimumNumberOfPlayers;
         mongoDBUri = "mongodb+srv://" + System.getenv("LuckyGatesMonoID") + ":" +
                 System.getenv("LuckyGatesMonoPass") + "@hellgatesbotcluster.zm0r5.mongodb.net/test";
         MongoClientURI mongoClientURI = new MongoClientURI(mongoDBUri);
@@ -51,12 +53,16 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         if(update.hasMessage()) {
             if(update.getMessage().getChatId() == getAdminChatId()) {
                 if(!shouldRunGame && update.getMessage().hasText()) {
-                    if(update.getMessage().getText().equalsIgnoreCase("run")) {
+                    String text = update.getMessage().getText();
+                    if(text.equalsIgnoreCase("run")) {
                         shouldRunGame = true;
+                    } else if(text.startsWith("MinPlayers = ")) {
+                        try {
+                            minimumNumberOfPlayers = Integer.parseInt(text.trim().split(" ")[2]);
+                        } catch (Exception e) {
+                            sendMessage(update.getMessage().getChatId(), "Invalid number of players");
+                        }
                     }
-                }
-                if(update.getMessage().hasAnimation()) {
-                    System.out.println(update.getMessage().getAnimation().getFileId());
                 }
                 // Can add special operation for admin here
             }
@@ -93,7 +99,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     int tickets = (int) foundAddyDoc.get(ticketKey);
                                     if(tickets > 0) {
                                         sendMessage(chat_id, "Initiating a new Game!!!");
-                                        newGame = new Game(this, chat_id, update.getMessage().getFrom().getId());
+                                        newGame = new Game(this, chat_id, update.getMessage().getFrom().getId(), minimumNumberOfPlayers);
                                         newGame.addPlayer(update.getMessage().getFrom());
                                         currentlyActiveGames.put(chat_id, newGame);
                                         SendAnimation sendAnimation = new SendAnimation();
@@ -226,13 +232,15 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     if(!update.getMessage().getChat().isUserChat()) {
                         sendMessage.setText("Please use /mytickets command in private chat");
                     } else {
-                        Document getAddyDoc = new Document(idKey, update.getMessage().getFrom().getId());
-                        Document foundAddyDoc = (Document) userDataCollection.find(getAddyDoc).first();
+                        Document document = new Document(idKey, update.getMessage().getFrom().getId());
+                        Document foundAddyDoc = (Document) userDataCollection.find(document).first();
                         if(foundAddyDoc != null) {
                             int tickets = (int) foundAddyDoc.get(ticketKey);
                             sendMessage.setText("You currently have " + tickets + " tickets");
                         } else {
-                            sendMessage.setText("You haven't registered with any wallet yet. Only registered uses can have tickets.");
+                            document.append(ticketKey, 0);
+                            userDataCollection.insertOne(document);
+                            sendMessage.setText("You have 0 tickets.");
                         }
                     }
                     sendMessage.setChatId(update.getMessage().getChatId());

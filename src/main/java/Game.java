@@ -10,16 +10,18 @@ public class Game {
 
     final long chat_id;
     final int gameInitiator;
+    final int minimumNumberOfPlayers;
     final Lucky_Gates_Bot lucky_gates_bot;
     Instant gameStartTime, gameCurrentTime, gameDestroyTime;
 
 
     // Constructor
-    public Game(Lucky_Gates_Bot lucky_gates_bot, long chat_id, int playerInitiator) {
+    public Game(Lucky_Gates_Bot lucky_gates_bot, long chat_id, int playerInitiator, int minimumNumberOfPlayers) {
         this.chat_id = chat_id;
         this.lucky_gates_bot = lucky_gates_bot;
         gameInitiator = playerInitiator;
         gameStartTime = Instant.now();
+        this.minimumNumberOfPlayers = minimumNumberOfPlayers;
         gameDestroyTime = gameStartTime.plus(6, ChronoUnit.MINUTES);
         gameThread.start();
     }
@@ -96,8 +98,8 @@ public class Game {
             }
 
             // Not yet complete. To add condition if only one player paid the tokens
-            if(numberOfPlayers < 5) {
-                lucky_gates_bot.sendMessage(chat_id, "Less than 5 people paid the entry ticket. Cannot start the game. Closing the game.");
+            if(numberOfPlayers < minimumNumberOfPlayers) {
+                lucky_gates_bot.sendMessage(chat_id, "Less than " + minimumNumberOfPlayers + " people paid the entry ticket. Cannot start the game. Closing the game.");
                 lucky_gates_bot.sendMessage(chat_id, "Everyone who paid via ticket will be refunded by adding 1 ticket" +
                         " to their account. You can use /mytickets command in private chat with me to check your number of tickets.");
                 lucky_gates_bot.sendMessage(chat_id, "It can take up to 5 minutes before you receive the refund. Please be patient");
@@ -152,8 +154,8 @@ public class Game {
                     nos.add("3");
                     Collections.shuffle(nos);
                     StringBuilder str = new StringBuilder();
-                    for (int k = 0; k < 5; k++) {
-                        str.append(nos.get(k));
+                    for (String no : nos) {
+                        str.append(no);
                     }
                     originalDoorChoice.put(player_Ids.get(i), str.toString());
                     currentPoints.put(player_Ids.get(i), 0);
@@ -476,7 +478,7 @@ public class Game {
     }
 
     public boolean beginGame() {
-        if(numberOfPlayers >= 5) {
+        if(numberOfPlayers >= minimumNumberOfPlayers) {
             hasGameStarted = true;
             return true;
         } else {

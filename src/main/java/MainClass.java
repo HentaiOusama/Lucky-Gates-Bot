@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 // When the application is started, the admin must send "run" message from his main account to turn on the bot.
 
 public class MainClass {
+    public static final int minimumNumberOfPlayers = 5;
 
     public static void main(String[] args) {
         BasicConfigurator.configure();
@@ -18,7 +19,7 @@ public class MainClass {
         TelegramBotsApi telegramBotsApi = new TelegramBotsApi();
         try {
 
-            telegramBotsApi.registerBot(new Lucky_Gates_Bot());
+            telegramBotsApi.registerBot(new Lucky_Gates_Bot(minimumNumberOfPlayers));
         } catch (Exception e) {
             e.printStackTrace();
         }
