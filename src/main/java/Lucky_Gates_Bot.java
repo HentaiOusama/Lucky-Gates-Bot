@@ -12,6 +12,7 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -19,23 +20,31 @@ import java.util.List;
 
 public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLongPollingBot {
 
+    private final String ourWallet, CRTSContractAddress;
+    private final BigInteger joinCost;
+    private int minimumNumberOfPlayers;
+
     public HashMap<Long, Game> currentlyActiveGames = new HashMap<>();
     boolean gotResponse = false;
     String responseMsg = "";
     String callbackQueryId = "";
     int responseMsgId = 0;
-    int minimumNumberOfPlayers;
     int replier = 0;
     final String mongoDBUri;
     final String databaseName = "Lucky-Gates-Bot-Database";
     final String idKey = "UserID", ticketKey = "Tickets";
+    final ArrayList<Integer> playersBuyingTickets = new ArrayList<>();
+    final HashMap<Long, TicketBuyer> ticketBuyers = new HashMap<>();
     MongoClient mongoClient;
     MongoDatabase mongoDatabase;
     MongoCollection userDataCollection;
     boolean shouldRunGame = false;
 
     // Constructor
-    public Lucky_Gates_Bot(int minimumNumberOfPlayers) {
+    public Lucky_Gates_Bot(String ourWallet, String CRTSContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
+        this.ourWallet = ourWallet;
+        this.CRTSContractAddress = CRTSContractAddress;
+        this.joinCost = joinCost;
         this.minimumNumberOfPlayers = minimumNumberOfPlayers;
         mongoDBUri = "mongodb+srv://" + System.getenv("LuckyGatesMonoID") + ":" +
                 System.getenv("LuckyGatesMonoPass") + "@hellgatesbotcluster.zm0r5.mongodb.net/test";
@@ -105,8 +114,9 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                         newGame.addPlayer(update.getMessage().getFrom());
                                         currentlyActiveGames.put(chat_id, newGame);
                                         SendAnimation sendAnimation = new SendAnimation();
-                                        sendAnimation.setAnimation("https://media.giphy.com/media/3ov9jYd9chmwCNQl8c/giphy.gif");
-                                        sendAnimation.setCaption("New game has been created. Please gather at least 5 players within 6 minutes for game to begin.");
+                                        sendAnimation.setAnimation("https://media.giphy.com/media/xThuW1VhsD5J6cJD4k/giphy.gif");
+                                        sendAnimation.setCaption("New game has been created. Please gather at least " + minimumNumberOfPlayers + " players within " +
+                                                "6 minutes for game to begin.");
                                         sendAnimation.setChatId(update.getMessage().getChatId());
                                         execute(sendAnimation);
                                         shouldSend = false;
@@ -303,170 +313,86 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                 case "/buytickets":
                 case "/buytickets@Lucky_Gates_Bot": {
                     SendMessage sendMessage = new SendMessage();
-                    sendMessage.setText("Please talk with @oregazembutoushiisuru to buy tickets");
+                    boolean shouldSend = true;
+                    if(!update.getMessage().getChat().isUserChat()) {
+                        sendMessage.setText("Please use /buytickets command in private chat @" + getBotUsername());
+                    } else {
+                        if (inputMsg.length != 3) {
+                            sendMessage.setText("Proper format to use this command is :\n/buytickets your_Tomo_Addy amount_To_Buy");
+                        } else {
+                            if (playersBuyingTickets.contains(update.getMessage().getFrom().getId())) {
+                                sendMessage.setText("Please complete your current purchase before starting a new purchase");
+                            } else {
+                                Document searchDoc = new Document(idKey, update.getMessage().getFrom().getId());
+                                Document foundDoc = (Document) userDataCollection.find(searchDoc).first();
+                                if (foundDoc != null) {
+                                    int tickets = (int) foundDoc.get(ticketKey);
+                                    int amountToBuy;
+                                    try {
+                                        amountToBuy = Integer.parseInt(inputMsg[2]);
+                                        if ((tickets + amountToBuy) <= 10) {
+                                            TicketBuyer ticketBuyer = new TicketBuyer(this, update.getMessage().getChatId(), amountToBuy,
+                                                    inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                            playersBuyingTickets.add(update.getMessage().getFrom().getId());
+                                            ticketBuyers.put(update.getMessage().getChatId(), ticketBuyer);
+                                            shouldSend = false;
+                                        } else {
+                                            sendMessage.setText("You cannot buy " + amountToBuy + " tickets. This is because you already have " + tickets +
+                                                    " tickets in your account and each player can only have a maximum of 10 tickets at any given point of time. Right now, you " +
+                                                    "can buy at most " + (10 - tickets) + " tickets");
+                                        }
+                                    } catch (Exception e) {
+                                        sendMessage.setText("Proper format to use this command is :\n/buytickets amount\n\nWhere amount has to be a number");
+                                    }
+                                } else {
+                                    try {
+                                        searchDoc.append(ticketKey, 0);
+                                        userDataCollection.insertOne(searchDoc);
+                                        int amountToBuy;
+                                        try {
+                                            amountToBuy = Integer.parseInt(inputMsg[2]);
+                                            if ((amountToBuy) <= 10) {
+                                                TicketBuyer ticketBuyer = new TicketBuyer(this, update.getMessage().getChatId(), amountToBuy,
+                                                        inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                                playersBuyingTickets.add(update.getMessage().getFrom().getId());
+                                                ticketBuyers.put(update.getMessage().getChatId(), ticketBuyer);
+                                                shouldSend = false;
+                                            } else {
+                                                sendMessage.setText("You cannot buy " + amountToBuy + " tickets. This is because you already have 0" +
+                                                        " tickets in your account and each player can only have a maximum of 10 tickets at any given point of time. Right now, you " +
+                                                        "can buy at most " + 10 + " tickets");
+                                            }
+                                        } catch (Exception e) {
+                                            sendMessage.setText("Proper format to use this command is :\n/buytickets amount\n\nWhere amount has to be a number");
+                                        }
+                                    } catch (Exception e) {
+                                        sendMessage.setText("Invalid Format");
+                                    }
+                                }
+                            }
+                        }
+                    }
                     sendMessage.setChatId(update.getMessage().getChatId());
-                    try {
-                        execute(sendMessage);
-                    } catch (TelegramApiException e) {
-                        e.printStackTrace();
+                    if(shouldSend) {
+                        try {
+                            execute(sendMessage);
+                        } catch (TelegramApiException e) {
+                            e.printStackTrace();
+                        }
                     }
                     break;
                 }
 
                 case "/exchange":
                 case "/exchange@Lucky_Gates_Bot": {
-                    SendMessage sendMessage = new SendMessage();
-                    sendMessage.setText("Please talk with @oregazembutoushiisuru to get crts in exchange for tickets");
-                    sendMessage.setChatId(update.getMessage().getChatId());
-                    try {
-                        execute(sendMessage);
-                    } catch (TelegramApiException e) {
-                        e.printStackTrace();
-                    }
-                    break;
-                }
-
-                case "/addtickets":
-                case "/addtickets@Lucky_Gates_Bot": {
-                    if(update.getMessage().getFrom().getId() != getAdminChatId()) {
-                        sendMessage(update.getMessage().getChatId(), "You are not allowed to use this command");
-                        return;
-                    } else {
-                        if(update.getMessage().isReply()) {
-                            int Id = update.getMessage().getReplyToMessage().getFrom().getId();
-                            Document document = new Document(idKey, Id);
-                            Document foundDoc = (Document) userDataCollection.find(document).first();
-                            if(foundDoc != null) {
-                                try {
-                                    int tickets = (int) foundDoc.get(ticketKey) + (Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]));
-                                    Bson updatedAddyDoc = new Document(ticketKey, tickets);
-                                    Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                                    userDataCollection.updateOne(foundDoc, updateAddyDocOperation);
-                                } catch (Exception e) {
-                                    sendMessage(update.getMessage().getChatId(), "Invalid Format");
-                                }
-                            } else {
-                                try {
-                                    document.append(ticketKey, (Integer.parseInt(update.getMessage().getText().trim().split(" ")[1])));
-                                    userDataCollection.insertOne(document);
-                                } catch (Exception e) {
-                                    sendMessage(update.getMessage().getChatId(), "Invalid Format");
-                                }
-                            }
-                        } else {
-                            sendMessage(update.getMessage().getChatId(), "This message has to be a reply type message");
-                        }
-                    }
-                    break;
-                }
-
-                case "/removetickets":
-                case "/removetickets@Lucky_Gates_Bot": {
-                    if(update.getMessage().getFrom().getId() != getAdminChatId()) {
-                        sendMessage(update.getMessage().getChatId(), "You are not allowed to use this command");
-                        return;
-                    } else {
-                        if(update.getMessage().isReply()) {
-                            int Id = update.getMessage().getReplyToMessage().getFrom().getId();
-                            Document document = new Document(idKey, Id);
-                            Document foundDoc = (Document) userDataCollection.find(document).first();
-                            if(foundDoc != null) {
-                                try {
-                                    int ticketsToRemove = (Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]));
-                                    int tickets = (int) foundDoc.get(ticketKey);
-                                    if(tickets >= ticketsToRemove) {
-                                        Bson updatedAddyDoc = new Document(ticketKey, (tickets-ticketsToRemove));
-                                        Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                                        userDataCollection.updateOne(foundDoc, updateAddyDocOperation);
-                                        sendMessage(update.getMessage().getChatId(), "Successfully removed " + ticketsToRemove + " tickets");
-                                    } else {
-                                        sendMessage(update.getMessage().getChatId(), "This user does not have " + ticketsToRemove + " tickets");
-                                    }
-                                } catch (Exception e) {
-                                    sendMessage(update.getMessage().getChatId(), "Invalid Format");
-                                }
-                            } else {
-                                try {
-                                    document.append(ticketKey, 0);
-                                    userDataCollection.insertOne(document);
-                                    sendMessage(update.getMessage().getChatId(), "This user does not have any tickets tickets");
-                                } catch (Exception e) {
-                                    sendMessage(update.getMessage().getChatId(), "Invalid Format");
-                                }
-                            }
-                        } else {
-                            sendMessage(update.getMessage().getChatId(), "This message has to be a reply type message");
-                        }
-                    }
-                    break;
-                }
-
-                case "/transfertickets":
-                case "/transfertickets@Lucky_Gates_Bot": {
-                    SendMessage sendMessage = new SendMessage();
-                    if(update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if(update.getMessage().isReply()) {
-                            if(inputMsg.length != 2) {
-                                sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
-                            } else {
-                                try {
-                                    int amountToTransfer = Integer.parseInt(inputMsg[1]);
-                                    int FromId = update.getMessage().getFrom().getId();
-                                    int ToId = update.getMessage().getReplyToMessage().getFrom().getId();
-                                    Document FromDocument = new Document(idKey, FromId);
-                                    Document ToDocument = new Document(idKey, ToId);
-                                    Document foundFromDoc = (Document) userDataCollection.find(FromDocument).first();
-                                    Document foundToDoc = (Document) userDataCollection.find(ToDocument).first();
-                                    if(foundFromDoc != null) {
-                                        try {
-                                            int tickets = (int) foundFromDoc.get(ticketKey);
-                                            if(tickets >= amountToTransfer) {
-                                                Bson updatedAddyDoc = new Document(ticketKey, tickets - amountToTransfer);
-                                                Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                                                userDataCollection.updateOne(foundFromDoc, updateAddyDocOperation);
-                                                if(foundToDoc != null) {
-                                                    tickets = (int) foundToDoc.get(ticketKey);
-                                                    updatedAddyDoc = new Document(ticketKey, tickets + amountToTransfer);
-                                                    updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                                                    userDataCollection.updateOne(foundToDoc, updateAddyDocOperation);
-                                                } else {
-                                                    ToDocument.append(ticketKey, amountToTransfer);
-                                                    userDataCollection.insertOne(ToDocument);
-                                                }
-                                                sendMessage.setText("Ticket Transfer Successful");
-                                            } else {
-                                                sendMessage.setText("You don't have enough tickets");
-                                            }
-                                        } catch (Exception e) {
-                                            sendMessage.setText("Invalid. Bot Error");
-                                        }
-                                    } else {
-                                        try {
-                                            FromDocument.append(ticketKey, 0);
-                                            userDataCollection.insertOne(FromDocument);
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                        sendMessage.setText("You don't have enough tickets");
-                                    }
-                                } catch (Exception e) {
-                                    sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
-                                    sendMessage.setText("Amount has to be a number");
-                                }
-                            }
-                        } else {
-                            sendMessage.setText("This message has to be a reply type message quoting any message of the person to whom you want to " +
-                                    "transfer the tickets");
-                        }
-                    } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
-                    }
-                    sendMessage.setChatId(update.getMessage().getChatId());
-                    try {
-                        execute(sendMessage);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+//                    SendMessage sendMessage = new SendMessage();
+//                    sendMessage.setText("Please talk with @oregazembutoushiisuru to get crts in exchange for tickets");
+//                    sendMessage.setChatId(update.getMessage().getChatId());
+//                    try {
+//                        execute(sendMessage);
+//                    } catch (TelegramApiException e) {
+//                        e.printStackTrace();
+//                    }
                     break;
                 }
 
@@ -621,5 +547,20 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             document.append(ticketKey, numberOfTicketsToAdd);
             userDataCollection.insertOne(document);
         }
+    }
+
+    public void playerTicketPurchaseEnded(int playerId, int numberOfTicketsToBuy, boolean didPay) {
+        if(didPay) {
+            Document document = new Document(idKey, playerId);
+            Document foundDocument = (Document) userDataCollection.find(document).first();
+            if(foundDocument != null) {
+                int tickets = (int) foundDocument.get(ticketKey);
+                Bson updateDoc = new Document(ticketKey, (numberOfTicketsToBuy + tickets));
+                Bson updateDocOperation = new Document("$set", updateDoc);
+                userDataCollection.updateOne(foundDocument, updateDocOperation);
+            }
+        }
+        playersBuyingTickets.remove((Integer) playerId);
+        ticketBuyers.remove((long) playerId);
     }
 }

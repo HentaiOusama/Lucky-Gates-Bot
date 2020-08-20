@@ -3,11 +3,16 @@ import org.telegram.telegrambots.ApiContextInitializer;
 import org.telegram.telegrambots.meta.TelegramBotsApi;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 
 // When the application is started, the admin must send "run" message from his main account to turn on the bot.
 
 public class MainClass {
-    public static final int minimumNumberOfPlayers = 5;
+    // Eth Network Type = "ropsten" or "mainnet"
+    private static final String ourWallet = "0x50cd10c496a20e98c953e88d6ba7b3f6bc21c589",
+            CRTSContractAddress = "0x2c78958660E734701f5D710CF5e967A0C8585cE5";
+    private static final BigInteger joinCost = new BigInteger("10000000000000000000");
+    static int minimumNumberOfPlayers = 3;
 
     public static void main(String[] args) {
         BasicConfigurator.configure();
@@ -19,7 +24,7 @@ public class MainClass {
         TelegramBotsApi telegramBotsApi = new TelegramBotsApi();
         try {
 
-            telegramBotsApi.registerBot(new Lucky_Gates_Bot(minimumNumberOfPlayers));
+            telegramBotsApi.registerBot(new Lucky_Gates_Bot(ourWallet, CRTSContractAddress, joinCost, minimumNumberOfPlayers));
         } catch (Exception e) {
             e.printStackTrace();
         }

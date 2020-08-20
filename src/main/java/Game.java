@@ -77,7 +77,7 @@ public class Game {
             lucky_gates_bot.sendMessage(chat_id, "Final Player list has been decided to\n\n" + getAllPlayerPing(), "https://media.giphy.com/media/j2pWZpr5RlpCodOB0d/giphy.gif");
             wait500ms();
             isAcceptingEntryPayment = true;
-            lucky_gates_bot.sendMessage(chat_id, "All players must pay 1 ticket within ⏳ 2 minutes");
+            lucky_gates_bot.sendMessage(chat_id, "All players must pay 1 ticket within ⏳ 2 minutes using the command /paywithticket");
             Instant paymentEndInstant = Instant.now().plus(2, ChronoUnit.MINUTES);
             while (Instant.now().compareTo(paymentEndInstant) < 0) {
                 if(didPlayerPay.size() == numberOfPlayers) {
@@ -182,7 +182,7 @@ public class Game {
                 }
                 if(idx == numberOfPlayers) {
                     lucky_gates_bot.sendMessage(chat_id, "All players have same number of points. Therefore all of you will play the next round.");
-                } else if(idx != 1) {
+                } else if(numberOfPlayers != 1) {
                     lucky_gates_bot.sendMessage(chat_id, "Least points are : " + min + "\nPlayers with " + min + " points will now be removed from the game");
                     for(int i = 0; i < numberOfPlayers; i++) {
                         if(currentPoints.get(player_Ids.get(i)) == min) {
