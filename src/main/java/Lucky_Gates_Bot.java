@@ -52,13 +52,15 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
         if(update.hasMessage()) {
             if(update.getMessage().getChatId() == getAdminChatId()) {
-                if(!shouldRunGame && update.getMessage().hasText()) {
+                if(update.getMessage().hasText()) {
                     String text = update.getMessage().getText();
-                    if(text.equalsIgnoreCase("run")) {
+                    sendMessage(update.getMessage().getChatId(), text);
+                    if(!shouldRunGame && text.equalsIgnoreCase("run")) {
                         shouldRunGame = true;
                     } else if(text.startsWith("MinPlayers = ")) {
                         try {
                             minimumNumberOfPlayers = Integer.parseInt(text.trim().split(" ")[2]);
+                            sendMessage(update.getMessage().getChatId(), "Min players set to " + minimumNumberOfPlayers);
                         } catch (Exception e) {
                             sendMessage(update.getMessage().getChatId(), "Invalid number of players");
                         }
@@ -395,6 +397,75 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         } else {
                             sendMessage(update.getMessage().getChatId(), "This message has to be a reply type message");
                         }
+                    }
+                    break;
+                }
+
+                case "/transfertickets":
+                case "/transfertickets@Lucky_Gates_Bot": {
+                    SendMessage sendMessage = new SendMessage();
+                    if(update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
+                        if(update.getMessage().isReply()) {
+                            if(inputMsg.length != 2) {
+                                sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
+                            } else {
+                                try {
+                                    int amountToTransfer = Integer.parseInt(inputMsg[1]);
+                                    int FromId = update.getMessage().getFrom().getId();
+                                    int ToId = update.getMessage().getReplyToMessage().getFrom().getId();
+                                    Document FromDocument = new Document(idKey, FromId);
+                                    Document ToDocument = new Document(idKey, ToId);
+                                    Document foundFromDoc = (Document) userDataCollection.find(FromDocument).first();
+                                    Document foundToDoc = (Document) userDataCollection.find(ToDocument).first();
+                                    if(foundFromDoc != null) {
+                                        try {
+                                            int tickets = (int) foundFromDoc.get(ticketKey);
+                                            if(tickets >= amountToTransfer) {
+                                                Bson updatedAddyDoc = new Document(ticketKey, tickets - amountToTransfer);
+                                                Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
+                                                userDataCollection.updateOne(foundFromDoc, updateAddyDocOperation);
+                                                if(foundToDoc != null) {
+                                                    tickets = (int) foundToDoc.get(ticketKey);
+                                                    updatedAddyDoc = new Document(ticketKey, tickets + amountToTransfer);
+                                                    updateAddyDocOperation = new Document("$set", updatedAddyDoc);
+                                                    userDataCollection.updateOne(foundToDoc, updateAddyDocOperation);
+                                                } else {
+                                                    ToDocument.append(ticketKey, amountToTransfer);
+                                                    userDataCollection.insertOne(ToDocument);
+                                                }
+                                                sendMessage.setText("Ticket Transfer Successful");
+                                            } else {
+                                                sendMessage.setText("You don't have enough tickets");
+                                            }
+                                        } catch (Exception e) {
+                                            sendMessage.setText("Invalid. Bot Error");
+                                        }
+                                    } else {
+                                        try {
+                                            FromDocument.append(ticketKey, 0);
+                                            userDataCollection.insertOne(FromDocument);
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                        sendMessage.setText("You don't have enough tickets");
+                                    }
+                                } catch (Exception e) {
+                                    sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
+                                    sendMessage.setText("Amount has to be a number");
+                                }
+                            }
+                        } else {
+                            sendMessage.setText("This message has to be a reply type message quoting any message of the person to whom you want to " +
+                                    "transfer the tickets");
+                        }
+                    } else {
+                        sendMessage.setText("This command can only be run in a group!!!");
+                    }
+                    sendMessage.setChatId(update.getMessage().getChatId());
+                    try {
+                        execute(sendMessage);
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                     break;
                 }

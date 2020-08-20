@@ -169,7 +169,7 @@ public class Game {
                     startTurnOfPlayer(currentTurnOfPlayer);
                     currentTurnOfPlayer++;
                 }
-                lucky_gates_bot.sendMessage(chat_id, "Score Board : " + getAllPlayerPingWithPoints());
+                lucky_gates_bot.sendMessage(chat_id, "Score Board : \n" + getAllPlayerPingWithPoints());
                 int min = 100;
                 int idx = 0;
                 for(int i = 0; i < numberOfPlayers; i++) {
@@ -182,7 +182,7 @@ public class Game {
                 }
                 if(idx == numberOfPlayers) {
                     lucky_gates_bot.sendMessage(chat_id, "All players have same number of points. Therefore all of you will play the next round.");
-                } else {
+                } else if(idx != 1) {
                     lucky_gates_bot.sendMessage(chat_id, "Least points are : " + min + "\nPlayers with " + min + " points will now be removed from the game");
                     for(int i = 0; i < numberOfPlayers; i++) {
                         if(currentPoints.get(player_Ids.get(i)) == min) {
@@ -196,17 +196,21 @@ public class Game {
                     wait500ms();
                     wait500ms();
                     wait500ms();
-                    lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "You all are the remainng player and shall play the next round.");
+                    lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\nYou all are the remaining player and shall play the next round.");
                 }
             }
 
             if(numberOfPlayers == 1) {
-                lucky_gates_bot.sendMessage(chat_id, "The winner of the game is : @" + players.get(player_Ids.get(0)));
-                lucky_gates_bot.sendMessage(chat_id, "Ypu have won " + prizePool + " tickets.");
+                lucky_gates_bot.sendMessage(chat_id, "The winner of the game is : @" + players.get(player_Ids.get(0)).getUserName());
+                lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool + " tickets.");
                 lucky_gates_bot.addTicketsForPlayer(player_Ids.get(0), prizePool);
             }
 
             for(int i = 0; i < numberOfPlayers; i++) {
+                players.remove(player_Ids.get(i));
+                player_Ids.remove(i);
+                i--;
+                numberOfPlayers--;
             }
             lucky_gates_bot.deleteGame(chat_id);
             try {
@@ -285,7 +289,7 @@ public class Game {
                             } else {
                                 doorPattern.append("❎");
                             }
-                            if(i != 4) {
+                            if(i != 5) {
                                 doorPattern.append(" -- ");
                             }
                         }
@@ -308,8 +312,8 @@ public class Game {
                     }
 
                     case 3: {
-                        String[] text = new String[2];
-                        String[] data = new String[2];
+                        String[] text = new String[3];
+                        String[] data = new String[3];
                         int k = 0;
                         for(int i = 0; i < 6; i++) {
                             if(i != doorSelection-1 && i != doorWith1-1 && i != doorWith0-1) {
@@ -504,8 +508,12 @@ public class Game {
                 return false;
             }
         } else {
-            lucky_gates_bot.sendMessage(chat_id, "@" + players.get(playerId).getUserName() + " The game is not accepting any entry payment " +
-                    "at the moment");
+            if(player_Ids.contains(playerId)) {
+                lucky_gates_bot.sendMessage(chat_id, "@" + players.get(playerId).getUserName() + " The game is not accepting any entry payment " +
+                        "at the moment");
+            } else {
+                lucky_gates_bot.sendMessage(chat_id, "You are not part of the game.");
+            }
             return false;
         }
     }
