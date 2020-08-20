@@ -110,7 +110,8 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     int tickets = (int) foundAddyDoc.get(ticketKey);
                                     if(tickets > 0) {
                                         sendMessage(chat_id, "Initiating a new Game!!!");
-                                        newGame = new Game(this, chat_id, update.getMessage().getFrom().getId(), minimumNumberOfPlayers);
+                                        newGame = new Game(this, chat_id, update.getMessage().getFrom().getId(), CRTSContractAddress,
+                                                ourWallet, joinCost, minimumNumberOfPlayers);
                                         newGame.addPlayer(update.getMessage().getFrom());
                                         currentlyActiveGames.put(chat_id, newGame);
                                         SendAnimation sendAnimation = new SendAnimation();
@@ -396,6 +397,45 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     break;
                 }
 
+                case "/receive":
+                case "/receive@Lucky_Gates_Bot": {
+                    SendMessage sendMessage = new SendMessage();
+                    boolean shouldSend = true;
+                    if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
+                        long chat_id = update.getMessage().getChatId();
+                        if (currentlyActiveGames.containsKey(chat_id)) {
+                            Game game = currentlyActiveGames.get(chat_id);
+                            if(game.isSendingPrize) {
+                                if(update.getMessage().getFrom().getId() == game.winnerId) {
+                                    if(inputMsg.length == 2) {
+                                        game.startPrizeSend(inputMsg[1]);
+                                        shouldSend = false;
+                                    } else {
+                                        sendMessage.setText("Invalid Format. Proper Format :-\n/receive@Lucky_Gates_Bot TOMO_Address");
+                                    }
+                                } else {
+                                    sendMessage.setText("You are not the winner. You cannot use this command");
+                                }
+                            } else {
+                                sendMessage.setText("Cannot use this command at the moment. Use this command to receive prize after winning a game");
+                            }
+                        } else {
+                            sendMessage.setText("Cannot use this command at the moment. Use this command to receive prize after winning a game");
+                        }
+                    } else {
+                        sendMessage.setText("This command can only be run in a group!!!");
+                    }
+                    sendMessage.setChatId(update.getMessage().getChatId());
+                    if(shouldSend) {
+                        try {
+                            execute(sendMessage);
+                        } catch (TelegramApiException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    break;
+                }
+
                 default: {
                     String msg = update.getMessage().getText().trim();
                     if(msg.endsWith("@Lucky_Gates_Bot") && msg.startsWith("/")) {
@@ -532,20 +572,6 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             Bson replaceDoc = new Document(ticketKey, tickets);
             Bson replaceDocOOperation = new Document("$set", replaceDoc);
             userDataCollection.updateOne(fetchDocument, replaceDocOOperation);
-        }
-    }
-
-    public void addTicketsForPlayer(int playerId, int numberOfTicketsToAdd) {
-        Document document = new Document(idKey, playerId);
-        Document foundDocument = (Document) userDataCollection.find(document).first();
-        if(foundDocument != null) {
-            int tickets = (int) foundDocument.get(ticketKey);
-            Bson updateDoc = new Document(ticketKey, (numberOfTicketsToAdd + tickets));
-            Bson updateDocOperation = new Document("$set", updateDoc);
-            userDataCollection.updateOne(foundDocument, updateDocOperation);
-        } else {
-            document.append(ticketKey, numberOfTicketsToAdd);
-            userDataCollection.insertOne(document);
         }
     }
 

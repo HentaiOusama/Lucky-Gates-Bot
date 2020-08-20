@@ -1,4 +1,16 @@
+import org.apache.log4j.Logger;
 import org.telegram.telegrambots.meta.api.objects.User;
+import org.web3j.abi.datatypes.Int;
+import org.web3j.contracts.eip20.generated.ERC20;
+import org.web3j.crypto.Credentials;
+import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.web3j.protocol.core.methods.response.Web3ClientVersion;
+import org.web3j.protocol.websocket.WebSocketClient;
+import org.web3j.protocol.websocket.WebSocketService;
+import org.web3j.tx.gas.ContractGasProvider;
+import java.math.BigInteger;
+import java.net.URI;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -12,11 +24,31 @@ public class Game {
     final int gameInitiator;
     final int minimumNumberOfPlayers;
     final Lucky_Gates_Bot lucky_gates_bot;
+    Logger logger = Logger.getLogger(Game.class);
     Instant gameStartTime, gameCurrentTime, gameDestroyTime;
+    boolean shouldTryToEstablishConnection = true;
+    boolean prizeSent = false;
+    boolean isSendingPrize = false;
+    boolean shouldBreak = false;
+    BigInteger prizePool;
+    public int winnerId;
+    String winnerAddy;
+    String rewardTrx;
+
+    final String CRTSContractAddress;
+    final String ourWallet;
+    final BigInteger TicketCost;
+    private final ArrayList<String> webSocketUrls = new ArrayList<>();
+    private WebSocketService webSocketService;
 
 
     // Constructor
-    public Game(Lucky_Gates_Bot lucky_gates_bot, long chat_id, int playerInitiator, int minimumNumberOfPlayers) {
+    public Game(Lucky_Gates_Bot lucky_gates_bot, long chat_id, int playerInitiator, String CRTSContractAddress, String ourWallet, BigInteger TicketCost,
+                int minimumNumberOfPlayers) {
+        webSocketUrls.add("wss://ws.tomochain.com");
+        this.CRTSContractAddress = CRTSContractAddress;
+        this.ourWallet = ourWallet;
+        this.TicketCost = TicketCost;
         this.chat_id = chat_id;
         this.lucky_gates_bot = lucky_gates_bot;
         gameInitiator = playerInitiator;
@@ -137,9 +169,9 @@ public class Game {
             wait500ms();
             wait500ms();
 
-            int prizePool = numberOfPlayers-1;
-            lucky_gates_bot.sendMessage(chat_id, "Total prize for the winner will be : " + prizePool + " tickets. These tickets can be exchanged for 10 crts" +
-                    " each with @oregazembutoshiisuru");
+            prizePool = TicketCost.multiply(new BigInteger(Integer.toString(numberOfPlayers-1)));
+            lucky_gates_bot.sendMessage(chat_id, "Total prize for the winner will be : " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS." +
+                    " This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 10 crts");
 
             while (numberOfPlayers > 1) {
                 currentPoints = new HashMap<>();
@@ -203,7 +235,26 @@ public class Game {
             if(numberOfPlayers == 1) {
                 lucky_gates_bot.sendMessage(chat_id, "The winner of the game is : @" + players.get(player_Ids.get(0)).getUserName());
                 lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool + " tickets.");
-                lucky_gates_bot.addTicketsForPlayer(player_Ids.get(0), prizePool);
+                winnerId = player_Ids.get(0);
+                isSendingPrize = true;
+                lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(0)).getUserName() + " Please use  -->   /receive@Lucky_Gates_Bot " +
+                        "TOMO_Wallet_address   <-- command (In the format shown without arrows and replacing the TOMO_Wallet_address with the tomo address of the wallet" +
+                        " to which you want the price to be sent) WITHIN ⏳ 4 minutes. If you send an invalid address, you will lose your prize.");
+                Instant endIns = Instant.now().plus(4, ChronoUnit.MINUTES);
+                while (Instant.now().compareTo(endIns) < 0) {
+                    if(getPrizeSentOrShouldBreak()) {
+                        break;
+                    }
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                }
+                if(prizeSent) {
+                    lucky_gates_bot.sendMessage(chat_id, "The prize has been sent. Trx : " + rewardTrx);
+                } else {
+                    lucky_gates_bot.sendMessage(chat_id, "4 minutes have passed. Either you have not provided your address or the provided address is invalid.");
+                }
             }
 
             for(int i = 0; i < numberOfPlayers; i++) {
@@ -212,6 +263,7 @@ public class Game {
                 i--;
                 numberOfPlayers--;
             }
+            lucky_gates_bot.sendMessage(chat_id, "Code by : @oregazembutoshiisuru");
             lucky_gates_bot.deleteGame(chat_id);
             try {
                 join();
@@ -219,6 +271,23 @@ public class Game {
                 e.printStackTrace();
             }
 
+        }
+    };
+
+    Thread prizeSender = new Thread() {
+        @Override
+        public void run() {
+            super.run();
+            rewardTrx = sendRewardToWinner(prizePool, winnerAddy);
+            if(rewardTrx != null) {
+                prizeSent = true;
+            }
+            shouldBreak = true;
+            try {
+                join();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     };
 
@@ -516,5 +585,82 @@ public class Game {
             }
             return false;
         }
+    }
+
+    public void setShouldTryToEstablishConnection() {
+        shouldTryToEstablishConnection = true;
+    }
+
+    public String sendRewardToWinner(BigInteger amount, String toAddress) {
+        lucky_gates_bot.sendMessage(chat_id, "Process of sending the prize has been initiated");
+        while (shouldTryToEstablishConnection) {
+            try {
+                Collections.shuffle(webSocketUrls);
+                shouldTryToEstablishConnection = false;
+                WebSocketClient webSocketClient = new WebSocketClient(new URI(webSocketUrls.get(0))) {
+                    @Override
+                    public void onClose(int code, String reason, boolean remote) {
+                        super.onClose(code, reason, remote);
+                        logger.info("WebSocket connection to " + uri + " closed successfully " + reason);
+                    }
+
+                    @Override
+                    public void onError(Exception e) {
+                        super.onError(e);
+                        logger.error("WebSocket connection to " + uri + " failed with error");
+                        e.printStackTrace();
+                        System.out.println("Trying again");
+                        setShouldTryToEstablishConnection();
+                    }
+                };
+                webSocketService = new WebSocketService(webSocketClient, true);
+
+                webSocketService.connect();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            wait500ms();
+        }
+
+        try {
+            Web3j web3j = Web3j.build(webSocketService);
+            Web3ClientVersion web3ClientVersion = web3j.web3ClientVersion().send();
+            System.out.println("Game's Chat ID : " + chat_id + "\nWeb3ClientVersion : " + web3ClientVersion.getWeb3ClientVersion());
+            TransactionReceipt trxReceipt = ERC20.load(CRTSContractAddress, web3j, Credentials.create(System.getenv("PrivateKey")), new ContractGasProvider() {
+                @Override
+                public BigInteger getGasPrice(String s) {
+                    return BigInteger.valueOf(250000000L);
+                }
+
+                @Override
+                public BigInteger getGasPrice() {
+                    return BigInteger.valueOf(2500000000L);
+                }
+
+                @Override
+                public BigInteger getGasLimit(String s) {
+                    return BigInteger.valueOf(65000L);
+                }
+
+                @Override
+                public BigInteger getGasLimit() {
+                    return BigInteger.valueOf(65000L);
+                }
+            }).transfer(toAddress, amount).send();
+            return trxReceipt.getTransactionHash();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public void startPrizeSend(String addy) {
+        winnerAddy = addy;
+        prizeSender.start();
+        isSendingPrize = false;
+    }
+
+    public boolean getPrizeSentOrShouldBreak() {
+        return (prizeSent || shouldBreak);
     }
 }
