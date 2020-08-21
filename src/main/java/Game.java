@@ -86,7 +86,7 @@ public class Game {
                 }
 
                 if(gameCurrentTime.compareTo(gameDestroyTime) > 0) {
-                    if(numberOfPlayers >= 5) {
+                    if(numberOfPlayers >= 6) {
                         lucky_gates_bot.sendMessage(chat_id, "Join time over. Starting Game with " + numberOfPlayers + " players");
                         wait500ms();
                     } else {
@@ -147,11 +147,11 @@ public class Game {
             }
 
             isAcceptingEntryPayment = false;
-            lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\nPayment for above players was confirmed. The game will start exactly after 1 minute." +
+            lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\nPayment for above players was confirmed. The game will start exactly after 30 seconds." +
                     "\n\nAll players will be kept notified until the game begins", "https://media.giphy.com/media/xOix1S8lhWAZa/giphy.gif");
 
-            Instant minEnd = Instant.now().plus(60, ChronoUnit.SECONDS);
-            Instant min5Warn = Instant.now().plus(30, ChronoUnit.SECONDS);
+            Instant minEnd = Instant.now().plus(30, ChronoUnit.SECONDS);
+            Instant min5Warn = Instant.now().plus(15, ChronoUnit.SECONDS);
             boolean min5 = true;
 
             while (Instant.now().compareTo(minEnd) <= 0) {
@@ -173,17 +173,19 @@ public class Game {
             lucky_gates_bot.sendMessage(chat_id, "Total prize for the winner will be : " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS." +
                     " This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 10 crts");
 
+
+            ArrayList<String> nos = new ArrayList<>();
+            nos.add("0");
+            nos.add("0");
+            nos.add("1");
+            nos.add("1");
+            nos.add("2");
+            nos.add("3");
+
             while (numberOfPlayers > 1) {
                 currentPoints = new HashMap<>();
                 originalDoorChoice = new HashMap<>();
                 for(int i = 0; i < numberOfPlayers; i++) {
-                    List<String> nos = new ArrayList<>();
-                    nos.add("0");
-                    nos.add("0");
-                    nos.add("1");
-                    nos.add("1");
-                    nos.add("2");
-                    nos.add("3");
                     Collections.shuffle(nos);
                     StringBuilder str = new StringBuilder();
                     for (String no : nos) {
@@ -197,11 +199,17 @@ public class Game {
                 while (currentTurnOfPlayer < numberOfPlayers) {
                     wait500ms();
                     wait500ms();
+                    wait500ms();
+                    wait500ms();
                     lucky_gates_bot.sendMessage(chat_id, "Current turn of @" + players.get(player_Ids.get(currentTurnOfPlayer)).getUserName());
                     startTurnOfPlayer(currentTurnOfPlayer);
                     currentTurnOfPlayer++;
                 }
                 lucky_gates_bot.sendMessage(chat_id, "Score Board : \n" + getAllPlayerPingWithPoints());
+                wait500ms();
+                wait500ms();
+                wait500ms();
+                wait500ms();
                 int min = 100;
                 int idx = 0;
                 for(int i = 0; i < numberOfPlayers; i++) {
@@ -214,6 +222,8 @@ public class Game {
                 }
                 if(idx == numberOfPlayers) {
                     lucky_gates_bot.sendMessage(chat_id, "All players have same number of points. Therefore all of you will play the next round.");
+                    wait500ms();
+                    wait500ms();
                 } else if(numberOfPlayers != 1) {
                     lucky_gates_bot.sendMessage(chat_id, "Least points are : " + min + "\nPlayers with " + min + " points will now be removed from the game");
                     for(int i = 0; i < numberOfPlayers; i++) {
@@ -234,9 +244,13 @@ public class Game {
 
             if(numberOfPlayers == 1) {
                 lucky_gates_bot.sendMessage(chat_id, "The winner of the game is : @" + players.get(player_Ids.get(0)).getUserName());
-                lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool + " tickets.");
+                lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS.");
                 winnerId = player_Ids.get(0);
                 isSendingPrize = true;
+                wait500ms();
+                wait500ms();
+                wait500ms();
+                wait500ms();
                 lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(0)).getUserName() + " Please use  -->   /receive@Lucky_Gates_Bot " +
                         "TOMO_Wallet_address   <-- command (In the format shown without arrows and replacing the TOMO_Wallet_address with the tomo address of the wallet" +
                         " to which you want the price to be sent) WITHIN ⏳ 4 minutes. If you send an invalid address, you will lose your prize.");
@@ -292,8 +306,11 @@ public class Game {
     };
 
 
+
     // By the end of this function, it would have been determined how many shots each player will fire
     private void startTurnOfPlayer(int playerIndex) {
+        wait500ms();
+        wait500ms();
         Instant endTime, halfTime, quarterTime;
         quarterTime = Instant.now();
         halfTime = Instant.now();
@@ -319,9 +336,9 @@ public class Game {
                                 new String[] {"1", "2", "3", "4", "5", "6"});
                         endTime = Instant.now().plus(90, ChronoUnit.SECONDS);
                         halfTime = endTime.minus(45, ChronoUnit.SECONDS);
-                        quarterTime = endTime.minus(22, ChronoUnit.SECONDS);
+                        quarterTime = endTime.minus(20, ChronoUnit.SECONDS);
                         halfValue = 45;
-                        quarterValue = 23;
+                        quarterValue = 20;
                         isWaiting  = true;
                         break;
                     }
@@ -387,19 +404,19 @@ public class Game {
                         for(int i = 0; i < 6; i++) {
                             if(i != doorSelection-1 && i != doorWith1-1 && i != doorWith0-1) {
                                 text[k] = "\uD83D\uDEAA " + (i + 1);
-                                data[k] = Integer.toString(i+1);
+                                data[k] = Integer.toString((i+1));
                                 k++;
                             }
                         }
                         wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
-                                        "Please switch to one of the remaining doors. You have ⏳ 30 seconds to decide or else you loose 1️⃣ point",
+                                        "Please switch to one of the remaining doors. You have ⏳ 60 seconds to decide or else you loose 1️⃣ point",
                                 text, data);
-                        endTime = Instant.now().plus(30, ChronoUnit.SECONDS);
-                        halfTime = endTime.minus(15, ChronoUnit.SECONDS);
-                        quarterTime = endTime.minus(8, ChronoUnit.SECONDS);
-                        halfValue = 15;
-                        quarterValue = 7;
+                        endTime = Instant.now().plus(60, ChronoUnit.SECONDS);
+                        halfTime = endTime.minus(30, ChronoUnit.SECONDS);
+                        quarterTime = endTime.minus(15, ChronoUnit.SECONDS);
+                        halfValue = 30;
+                        quarterValue = 15;
                         isWaiting  = true;
                         break;
                     }
@@ -411,7 +428,7 @@ public class Game {
                         wait500ms();
                         wait500ms();
                         String sendVal;
-                        int result = Integer.parseInt(Character.toString(originalDoorChoice.get(player_Ids.get(playerIndex)).charAt(doorSelection-1)));
+                        int result = Integer.parseInt(String.valueOf(originalDoorChoice.get(player_Ids.get(playerIndex)).charAt(doorSelection-1)));
                         if(result == 0) {
                             sendVal = "0️⃣";
                         } else if(result == 1) {
@@ -470,9 +487,9 @@ public class Game {
                             isWaiting = false;
                             break;
                         } else if (turnStage == 3) {
-                            turnStage++;
                             doorSelection = Integer.parseInt(lucky_gates_bot.responseMsg);
                             lucky_gates_bot.setGotResponseFalse(chat_id,"You chose \uD83D\uDEAA Door : " + doorSelection);
+                            turnStage++;
                             isWaiting = false;
                             break;
                         }
@@ -500,11 +517,14 @@ public class Game {
                     } else {
                         lucky_gates_bot.sendMessage(chat_id, "You haven't chosen any option. Therefore you won't switch.");
                         turnStage += 2;
+                        isWaiting = false;
                     }
                 }
             }
         }
     }
+
+
 
     public void wait500ms() {
         try {
