@@ -34,6 +34,8 @@ public class Game {
     public int winnerId;
     String winnerAddy;
     String rewardTrx;
+    private final boolean testMode;
+    int notResponseCount = 0;
 
     final String CRTSContractAddress;
     final String ourWallet;
@@ -44,13 +46,14 @@ public class Game {
 
     // Constructor
     public Game(Lucky_Gates_Bot lucky_gates_bot, long chat_id, int playerInitiator, String CRTSContractAddress, String ourWallet, BigInteger TicketCost,
-                int minimumNumberOfPlayers) {
+                int minimumNumberOfPlayers, boolean testMode) {
         webSocketUrls.add("wss://ws.tomochain.com");
         this.CRTSContractAddress = CRTSContractAddress;
         this.ourWallet = ourWallet;
         this.TicketCost = TicketCost;
         this.chat_id = chat_id;
         this.lucky_gates_bot = lucky_gates_bot;
+        this.testMode = testMode;
         gameInitiator = playerInitiator;
         gameStartTime = Instant.now();
         this.minimumNumberOfPlayers = minimumNumberOfPlayers;
@@ -108,61 +111,66 @@ public class Game {
 
             lucky_gates_bot.sendMessage(chat_id, "Final Player list has been decided to\n\n" + getAllPlayerPing(), "https://media.giphy.com/media/j2pWZpr5RlpCodOB0d/giphy.gif");
             wait500ms();
-            isAcceptingEntryPayment = true;
-            lucky_gates_bot.sendMessage(chat_id, "All players must pay 1 ticket within ⏳ 2 minutes using the command /paywithticket");
-            Instant paymentEndInstant = Instant.now().plus(2, ChronoUnit.MINUTES);
-            while (Instant.now().compareTo(paymentEndInstant) < 0) {
-                if(didPlayerPay.size() == numberOfPlayers) {
-                    break;
+            wait500ms();
+            wait500ms();
+            if(!testMode) {
+                isAcceptingEntryPayment = true;
+                lucky_gates_bot.sendMessage(chat_id, "All players must pay 1 ticket within ⏳ 2 minutes using the command /paywithticket");
+                Instant paymentEndInstant = Instant.now().plus(2, ChronoUnit.MINUTES);
+                while (Instant.now().compareTo(paymentEndInstant) < 0) {
+                    if(didPlayerPay.size() == numberOfPlayers) {
+                        break;
+                    }
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
                 }
-                wait500ms();
-                wait500ms();
-                wait500ms();
-            }
 
-            for(int i = 0; i < numberOfPlayers; i++) {
-                if(!didPlayerPay.contains(player_Ids.get(i))) {
-                    players.remove(player_Ids.get(i));
-                    player_Ids.remove(i);
-                    i--;
-                    numberOfPlayers--;
-                }
-            }
-
-            // Not yet complete. To add condition if only one player paid the tokens
-            if(numberOfPlayers < minimumNumberOfPlayers) {
-                lucky_gates_bot.sendMessage(chat_id, "Less than " + minimumNumberOfPlayers + " people paid the entry ticket. Cannot start the game. Closing the game.");
-                lucky_gates_bot.sendMessage(chat_id, "Everyone who paid via ticket will be refunded by adding 1 ticket" +
-                        " to their account. You can use /mytickets command in private chat with me to check your number of tickets.");
-                lucky_gates_bot.sendMessage(chat_id, "It can take up to 5 minutes before you receive the refund. Please be patient");
                 for(int i = 0; i < numberOfPlayers; i++) {
-                    lucky_gates_bot.refund1Ticket(player_Ids.get(i));
-                }
-                lucky_gates_bot.deleteGame(chat_id);
-                try {
-                    join();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            isAcceptingEntryPayment = false;
-            lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\nPayment for above players was confirmed. The game will start exactly after 30 seconds." +
-                    "\n\nAll players will be kept notified until the game begins", "https://media.giphy.com/media/xOix1S8lhWAZa/giphy.gif");
-
-            Instant minEnd = Instant.now().plus(30, ChronoUnit.SECONDS);
-            Instant min5Warn = Instant.now().plus(15, ChronoUnit.SECONDS);
-            boolean min5 = true;
-
-            while (Instant.now().compareTo(minEnd) <= 0) {
-                if(min5) {
-                    if(Instant.now().compareTo(min5Warn) > 0) {
-                        lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\n30 Seconds remaining before game start");
-                        min5 = false;
+                    if(!didPlayerPay.contains(player_Ids.get(i))) {
+                        players.remove(player_Ids.get(i));
+                        player_Ids.remove(i);
+                        i--;
+                        numberOfPlayers--;
                     }
                 }
-                wait500ms();
-                wait500ms();
+
+                if(numberOfPlayers < minimumNumberOfPlayers) {
+                    lucky_gates_bot.sendMessage(chat_id, "Less than " + minimumNumberOfPlayers + " people paid the entry ticket. Cannot start the game. " +
+                            "Closing the game." + "\n\nEveryone who paid via ticket will be refunded by adding 1 ticket" +
+                            " to their account. You can use /mytickets command in private chat with me to check your number of tickets." + "It can " +
+                            "take up to 5 minutes before you receive the refund. Please be patient");
+                    for(int i = 0; i < numberOfPlayers; i++) {
+                        lucky_gates_bot.refund1Ticket(player_Ids.get(i));
+                    }
+                    lucky_gates_bot.deleteGame(chat_id);
+                    try {
+                        join();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                isAcceptingEntryPayment = false;
+                lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\nPayment for above players was confirmed. The game will start exactly after 30 seconds." +
+                        "\n\nAll players will be kept notified until the game begins", "https://media.giphy.com/media/xOix1S8lhWAZa/giphy.gif");
+
+                Instant minEnd = Instant.now().plus(30, ChronoUnit.SECONDS);
+                Instant min5Warn = Instant.now().plus(15, ChronoUnit.SECONDS);
+                boolean min5 = true;
+
+                while (Instant.now().compareTo(minEnd) <= 0) {
+                    if(min5) {
+                        if(Instant.now().compareTo(min5Warn) > 0) {
+                            lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\n\n15 Seconds remaining before game start");
+                            min5 = false;
+                        }
+                    }
+                    wait500ms();
+                    wait500ms();
+                }
+            } else {
+                lucky_gates_bot.sendMessage(chat_id, "This is a test mode game and there will be no entry price or winner prize");
             }
 
             lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\nGame has Begun...");
@@ -170,8 +178,10 @@ public class Game {
             wait500ms();
 
             prizePool = TicketCost.multiply(new BigInteger(Integer.toString(numberOfPlayers-1)));
-            lucky_gates_bot.sendMessage(chat_id, "Total prize for the winner will be : " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS." +
-                    " This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 10 crts");
+            if(!testMode) {
+                lucky_gates_bot.sendMessage(chat_id, "Total prize for the winner will be : " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS." +
+                        " This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 10 crts");
+            }
 
 
             ArrayList<String> nos = new ArrayList<>();
@@ -181,9 +191,12 @@ public class Game {
             nos.add("1");
             nos.add("2");
             nos.add("3");
+            currentPoints = new HashMap<>();
+            for(int i = 0; i < numberOfPlayers; i++) {
+                currentPoints.put(player_Ids.get(i), 0);
+            }
 
             while (numberOfPlayers > 1) {
-                currentPoints = new HashMap<>();
                 originalDoorChoice = new HashMap<>();
                 for(int i = 0; i < numberOfPlayers; i++) {
                     Collections.shuffle(nos);
@@ -192,10 +205,10 @@ public class Game {
                         str.append(no);
                     }
                     originalDoorChoice.put(player_Ids.get(i), str.toString());
-                    currentPoints.put(player_Ids.get(i), 0);
                 }
                 int currentTurnOfPlayer = 0;
 
+                notResponseCount = 0;
                 while (currentTurnOfPlayer < numberOfPlayers) {
                     wait500ms();
                     wait500ms();
@@ -205,11 +218,11 @@ public class Game {
                     startTurnOfPlayer(currentTurnOfPlayer);
                     currentTurnOfPlayer++;
                 }
+                if(notResponseCount == numberOfPlayers) {
+                    lucky_gates_bot.sendMessage(chat_id, "No one responded in the current round. Dissolving the game.");
+                    break;
+                }
                 lucky_gates_bot.sendMessage(chat_id, "Score Board : \n" + getAllPlayerPingWithPoints());
-                wait500ms();
-                wait500ms();
-                wait500ms();
-                wait500ms();
                 int min = 100;
                 int idx = 0;
                 for(int i = 0; i < numberOfPlayers; i++) {
@@ -225,10 +238,10 @@ public class Game {
                     wait500ms();
                     wait500ms();
                 } else if(numberOfPlayers != 1) {
-                    lucky_gates_bot.sendMessage(chat_id, "Least points are : " + min + "\nPlayers with " + min + " points will now be removed from the game");
+                    String msg = "Least points are : " + min + "\nPlayers with " + min + " points will now be removed from the game";
                     for(int i = 0; i < numberOfPlayers; i++) {
                         if(currentPoints.get(player_Ids.get(i)) == min) {
-                            lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(i)).getUserName() + " you have been removed from the game.");
+                            msg += "\n\n@" + players.get(player_Ids.get(i)).getUserName() + " you have been removed from the game.";
                             players.remove(player_Ids.get(i));
                             player_Ids.remove(i);
                             i--;
@@ -237,37 +250,50 @@ public class Game {
                     }
                     wait500ms();
                     wait500ms();
+                    lucky_gates_bot.sendMessage(chat_id, msg);
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
                     wait500ms();
                     lucky_gates_bot.sendMessage(chat_id, getAllPlayerPing() + "\nYou all are the remaining player and shall play the next round.");
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
                 }
             }
 
             if(numberOfPlayers == 1) {
                 lucky_gates_bot.sendMessage(chat_id, "The winner of the game is : @" + players.get(player_Ids.get(0)).getUserName());
-                lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS.");
-                winnerId = player_Ids.get(0);
-                isSendingPrize = true;
-                wait500ms();
-                wait500ms();
-                wait500ms();
-                wait500ms();
-                lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(0)).getUserName() + " Please use  -->   /receive@Lucky_Gates_Bot " +
-                        "TOMO_Wallet_address   <-- command (In the format shown without arrows and replacing the TOMO_Wallet_address with the tomo address of the wallet" +
-                        " to which you want the price to be sent) WITHIN ⏳ 4 minutes. If you send an invalid address, you will lose your prize.");
-                Instant endIns = Instant.now().plus(4, ChronoUnit.MINUTES);
-                while (Instant.now().compareTo(endIns) < 0) {
-                    if(getPrizeSentOrShouldBreak()) {
-                        break;
+                if(!testMode) {
+                    winnerId = player_Ids.get(0);
+                    isSendingPrize = true;
+                    lucky_gates_bot.sendMessage(chat_id, "You have won " + prizePool.divide(new BigInteger("1000000000000000000")) + " CRTS.");
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    wait500ms();
+                    lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(0)).getUserName() + " Please use  -->   /receive@Lucky_Gates_Bot " +
+                            "TOMO_Wallet_address   <-- command (In the format shown without arrows and replacing the TOMO_Wallet_address with the tomo address of the wallet" +
+                            " to which you want the price to be sent) WITHIN ⏳ 4 minutes. If you send an invalid address, you will lose your prize.");
+                    Instant endIns = Instant.now().plus(4, ChronoUnit.MINUTES);
+                    while (Instant.now().compareTo(endIns) < 0) {
+                        if(getPrizeSentOrShouldBreak()) {
+                            break;
+                        }
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
                     }
-                    wait500ms();
-                    wait500ms();
-                    wait500ms();
-                    wait500ms();
-                }
-                if(prizeSent) {
-                    lucky_gates_bot.sendMessage(chat_id, "The prize has been sent. Trx : " + rewardTrx);
-                } else {
-                    lucky_gates_bot.sendMessage(chat_id, "4 minutes have passed. Either you have not provided your address or the provided address is invalid.");
+                    if(prizeSent) {
+                        lucky_gates_bot.sendMessage(chat_id, "The prize has been sent. Trx : " + rewardTrx);
+                    } else {
+                        lucky_gates_bot.sendMessage(chat_id, "4 minutes have passed. Either you have not provided your address or the provided address is invalid.");
+                    }
                 }
             }
 
@@ -277,7 +303,7 @@ public class Game {
                 i--;
                 numberOfPlayers--;
             }
-            lucky_gates_bot.sendMessage(chat_id, "Code by : @oregazembutoshiisuru");
+            lucky_gates_bot.sendMessage(chat_id, "Code by : @oregazembutoushiisuru");
             lucky_gates_bot.deleteGame(chat_id);
             try {
                 join();
@@ -327,6 +353,8 @@ public class Game {
             if (!isWaiting) {
                 switch (turnStage) {
                     case 1: {
+                        halfValue = 45;
+                        quarterValue = 20;
                         wait500ms();
                         lucky_gates_bot.sendMessage(chat_id, "", "https://media.giphy.com/media/jQ8sHpRHbdqW1VsDvq/giphy.gif");
                         lucky_gates_bot.sendMessageWithButton(chat_id, "\uD83D\uDEAA You are standing in front of 6 doors \uD83D\uDEAA\n\n1 random " +
@@ -334,11 +362,12 @@ public class Game {
                                         "\nRemaining 2 doors contains 0️⃣ points each.\n\nPick one door within ⏳ 90 seconds or else you will loose 1️⃣ point.",
                                 new String[] {"\uD83D\uDEAA 1", "\uD83D\uDEAA 2", "\uD83D\uDEAA 3", "\uD83D\uDEAA 4", "\uD83D\uDEAA 5", "\uD83D\uDEAA 6"},
                                 new String[] {"1", "2", "3", "4", "5", "6"});
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
                         endTime = Instant.now().plus(90, ChronoUnit.SECONDS);
                         halfTime = endTime.minus(45, ChronoUnit.SECONDS);
                         quarterTime = endTime.minus(20, ChronoUnit.SECONDS);
-                        halfValue = 45;
-                        quarterValue = 20;
                         isWaiting  = true;
                         break;
                     }
@@ -379,8 +408,11 @@ public class Game {
                                 doorPattern.append(" -- ");
                             }
                         }
-                        lucky_gates_bot.sendMessage(chat_id, "The gatekeeper will now open two doors", "https://media.giphy.com/media/J7fawBXeSAu3e/giphy.gif");
+                        halfValue = 30;
+                        quarterValue = 15;
                         wait500ms();
+                        wait500ms();
+                        lucky_gates_bot.sendMessage(chat_id, "The gatekeeper will now open two doors", "https://media.giphy.com/media/J7fawBXeSAu3e/giphy.gif");
                         wait500ms();
                         wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
@@ -388,11 +420,12 @@ public class Game {
                                         "\n\uD83D\uDEAA Door " + doorWith0 + " has 0️⃣ points behind it.\n\nYou now have an option " +
                                         "to switch to one of the remaining three doors.\nYou have ⏳ 1 minute to switch. Would you like to switch?",
                                 new String[] {"Switch", "Don't Switch"}, new String[] {"Switch", "Don't Switch"});
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
                         endTime = Instant.now().plus(60, ChronoUnit.SECONDS);
                         halfTime = endTime.minus(30, ChronoUnit.SECONDS);
                         quarterTime = endTime.minus(15, ChronoUnit.SECONDS);
-                        halfValue = 30;
-                        quarterValue = 15;
                         isWaiting  = true;
                         break;
                     }
@@ -408,25 +441,23 @@ public class Game {
                                 k++;
                             }
                         }
+                        halfValue = 30;
+                        quarterValue = 15;
+                        wait500ms();
                         wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
                                         "Please switch to one of the remaining doors. You have ⏳ 60 seconds to decide or else you loose 1️⃣ point",
                                 text, data);
+                        wait500ms();
+                        wait500ms();
                         endTime = Instant.now().plus(60, ChronoUnit.SECONDS);
                         halfTime = endTime.minus(30, ChronoUnit.SECONDS);
                         quarterTime = endTime.minus(15, ChronoUnit.SECONDS);
-                        halfValue = 30;
-                        quarterValue = 15;
                         isWaiting  = true;
                         break;
                     }
 
                     case 4: {
-                        lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\nOpening \uD83D\uDEAA Door No. "
-                                + doorSelection,"https://media.giphy.com/media/xTiTnt0GGd5p3HpDBC/giphy.gif");
-                        wait500ms();
-                        wait500ms();
-                        wait500ms();
                         String sendVal;
                         int result = Integer.parseInt(String.valueOf(originalDoorChoice.get(player_Ids.get(playerIndex)).charAt(doorSelection-1)));
                         if(result == 0) {
@@ -440,8 +471,14 @@ public class Game {
                         } else {
                             sendVal = "-1️⃣";
                         }
+                        int points = currentPoints.get(player_Ids.get(playerIndex)) + result;
+                        currentPoints.replace(player_Ids.get(playerIndex), points);
+                        lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\nOpening \uD83D\uDEAA Door No. "
+                                + doorSelection,"https://media.giphy.com/media/xTiTnt0GGd5p3HpDBC/giphy.gif");
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
                         lucky_gates_bot.sendMessage(chat_id, "It had " + sendVal + " points behind it.");
-                        currentPoints.replace(player_Ids.get(playerIndex), currentPoints.get(player_Ids.get(playerIndex)) + result);
                         wait500ms();
                         wait500ms();
                         turnStage++;
@@ -509,6 +546,9 @@ public class Game {
                 
                 if (didNotAnswer) {
                     if(turnStage != 2) {
+                        if(turnStage == 1) {
+                            notResponseCount++;
+                        }
                         lucky_gates_bot.sendMessage(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + " you didn't respond in time." +
                                 " You have lost 1️⃣ point");
                         currentPoints.replace(player_Ids.get(playerIndex), currentPoints.get(player_Ids.get(playerIndex)) - 1);

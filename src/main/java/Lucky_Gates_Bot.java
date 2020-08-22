@@ -41,6 +41,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     MongoDatabase mongoDatabase;
     MongoCollection userDataCollection;
     boolean shouldRunGame = false;
+    boolean testMode = false;
 
     // Constructor
     public Lucky_Gates_Bot(String ourWallet, String CRTSContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
@@ -76,6 +77,16 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                             sendMessage(chat_id, "Invalid number of players");
                         }
                     }
+                    else if(text.equalsIgnoreCase("TestMode")) {
+                        testMode = true;
+                    } else if (text.equalsIgnoreCase("ExitTestMode")) {
+                        testMode = false;
+                    }
+                    else if(text.equalsIgnoreCase("Stop")) {
+                        shouldRunGame = false;
+                    } else if(text.equalsIgnoreCase("Commands")) {
+                        sendMessage(chat_id, "Run\nMinPlayers = __\nTestMode\nExitTestMode\nStop\nCommands");
+                    }
                 }
                 // Can add special operation for admin here
             }
@@ -102,7 +113,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     SendMessage sendMessage = new SendMessage();
                     boolean shouldSend = true;
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if(chat_id != -1001487755827L) { // chat_id != -1001487755827L
+                        if(chat_id != -1001487755827L && chat_id != -1001391125843L) { // chat_id != -1001487755827L
                             sendMessage(chat_id, "This bot is only built to be used in CRTS GAME-SWAP CHANNEL");
                             return;
                         }
@@ -117,7 +128,8 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     if(tickets > 0) {
                                         Game newGame;
                                         sendMessage(chat_id, "Initiating a new Game!!!");
-                                        newGame = new Game(this, chat_id, fromId, CRTSContractAddress, ourWallet, joinCost, minimumNumberOfPlayers);
+                                        newGame = new Game(this, chat_id, fromId, CRTSContractAddress, ourWallet, joinCost, minimumNumberOfPlayers,
+                                                testMode);
                                         newGame.addPlayer(update.getMessage().getFrom());
                                         currentlyActiveGames.put(chat_id, newGame);
                                         messagesForDeletion.put(chat_id, new ArrayList<>());
@@ -497,9 +509,10 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                             int Id = update.getMessage().getReplyToMessage().getFrom().getId();
                             Document document = new Document(idKey, Id);
                             Document foundDoc = (Document) userDataCollection.find(document).first();
+                            int ticks = Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]);
                             if(foundDoc != null) {
                                 try {
-                                    int tickets = (int) foundDoc.get(ticketKey) + (Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]));
+                                    int tickets = (int) foundDoc.get(ticketKey) + ticks;
                                     Bson updatedAddyDoc = new Document(ticketKey, tickets);
                                     Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
                                     userDataCollection.updateOne(foundDoc, updateAddyDocOperation);
@@ -508,13 +521,13 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                 }
                             } else {
                                 try {
-                                    document.append(ticketKey, (Integer.parseInt(update.getMessage().getText().trim().split(" ")[1])));
+                                    document.append(ticketKey, ticks);
                                     userDataCollection.insertOne(document);
                                 } catch (Exception e) {
                                     sendMessage(chat_id, "Invalid Format");
                                 }
                             }
-                            sendMessage(chat_id, "Successfully Added 1 Ticket");
+                            sendMessage(chat_id, "Successfully Added " + ticks + " Ticket");
                         } else {
                             sendMessage(chat_id, "This message has to be a reply type message");
                         }
