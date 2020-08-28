@@ -7,6 +7,14 @@ import java.math.BigInteger;
 
 // When the application is started, the admin must send "run" message from his main account to turn on the bot.
 
+/*Required Environment Variables :-
+*
+* LuckyGatesBotTokenA   = ?????;
+* LuckyGatesBotTokenB   = ?????;
+* LuckyGatesMonoPass    = ?????;
+* PrivateKey            = ?????
+* */
+
 public class MainClass {
     // Eth Network Type = "ropsten" or "mainnet"
     private static final String ourWallet = "0x50cd10c496a20e98c953e88d6ba7b3f6bc21c589",

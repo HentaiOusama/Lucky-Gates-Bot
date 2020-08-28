@@ -14,6 +14,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,15 +35,19 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     int replier = 0;
     final String mongoDBUri;
     final String databaseName = "Lucky-Gates-Bot-Database";
+    final String botControlDatabaseName = "All-Bots-Command-Centre";
+    final String botName = "Lucky Gates Bot";
     final String idKey = "UserID", ticketKey = "Tickets";
     final ArrayList<Integer> playersBuyingTickets = new ArrayList<>();
     final HashMap<Long, TicketBuyer> ticketBuyers = new HashMap<>();
     final HashMap<Long, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
     MongoClient mongoClient;
-    MongoDatabase mongoDatabase;
-    MongoCollection userDataCollection;
-    boolean shouldRunGame = false;
+    MongoDatabase mongoDatabase, botControlDatabase;
+    MongoCollection userDataCollection, botControlCollection;
+    boolean shouldRunGame;
     boolean testMode = false;
+    long awakeChatId = -1001477389485L;
+    Document botNameDoc, foundBotNameDoc;
 
     // Constructor
     public Lucky_Gates_Bot(String ourWallet, String CRTSContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
@@ -54,7 +60,12 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         MongoClientURI mongoClientURI = new MongoClientURI(mongoDBUri);
         mongoClient = new MongoClient(mongoClientURI);
         mongoDatabase = mongoClient.getDatabase(databaseName);
+        botControlDatabase = mongoClient.getDatabase(botControlDatabaseName);
         userDataCollection = mongoDatabase.getCollection("UserTickets");
+        botControlCollection = botControlDatabase.getCollection("MemberValues");
+        botNameDoc = new Document("botName", botName);
+        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+        shouldRunGame = (boolean) foundBotNameDoc.get("shouldRunGame");
     }
 
 
@@ -66,9 +77,13 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             if(chat_id == getAdminChatId()) {
                 if(update.getMessage().hasText()) {
                     String text = update.getMessage().getText();
-                    sendMessage(chat_id, text);
                     if(!shouldRunGame && text.equalsIgnoreCase("run")) {
                         shouldRunGame = true;
+                        botNameDoc = new Document("botName", botName);
+                        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+                        Bson updatedAddyDoc = new Document("shouldRunGame", shouldRunGame);
+                        Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
+                        botControlCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
                     } else if(text.startsWith("MinPlayers = ")) {
                         try {
                             minimumNumberOfPlayers = Integer.parseInt(text.trim().split(" ")[2]);
@@ -84,9 +99,16 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     }
                     else if(text.equalsIgnoreCase("Stop")) {
                         shouldRunGame = false;
+                        botNameDoc = new Document("botName", botName);
+                        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+                        Bson updatedAddyDoc = new Document("shouldRunGame", shouldRunGame);
+                        Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
+                        botControlCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
                     } else if(text.equalsIgnoreCase("Commands")) {
                         sendMessage(chat_id, "Run\nMinPlayers = __\nTestMode\nExitTestMode\nStop\nCommands");
                     }
+                    sendMessage(update.getMessage().getChatId(), "shouldRunGame = " + shouldRunGame + "\nTestMode = " + testMode +
+                            "\nMinPlayers = " + minimumNumberOfPlayers);
                 }
                 // Can add special operation for admin here
             }
@@ -113,7 +135,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     SendMessage sendMessage = new SendMessage();
                     boolean shouldSend = true;
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if(chat_id != -1001487755827L && chat_id != -1001391125843L) { // chat_id != -1001487755827L
+                        if(chat_id != -1001487755827L && chat_id != -1001391125843L && chat_id != awakeChatId) { // chat_id != -1001487755827L
                             sendMessage(chat_id, "This bot is only built to be used in CRTS GAME-SWAP CHANNEL");
                             return;
                         }
@@ -561,7 +583,6 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     public String getBotToken() {
         return (System.getenv("LuckyGatesBotTokenA") + ":" + System.getenv("LuckyGatesBotTokenB"));
     }
-
 
 
     public void sendMessage(long chat_id, String msg, String... url) {
