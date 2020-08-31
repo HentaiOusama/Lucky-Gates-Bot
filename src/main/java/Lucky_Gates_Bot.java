@@ -48,6 +48,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     boolean testMode = false;
     long awakeChatId = -1001477389485L;
     Document botNameDoc, foundBotNameDoc;
+    boolean waitingToSwitchServers = false;
 
     // Constructor
     public Lucky_Gates_Bot(String ourWallet, String CRTSContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
@@ -104,11 +105,19 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         Bson updatedAddyDoc = new Document("shouldRunGame", shouldRunGame);
                         Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
                         botControlCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
+                    } else if(text.equalsIgnoreCase("StartServerSwitchProcess")) {
+                        waitingToSwitchServers = true;
+                        sendMessage(getAdminChatId(), "From now, the bot won't accept new games or Ticket buy requests. Please use \"ActiveProcesses\" command " +
+                                "to see how many games are active and then switch when there are no games active games and ticket buyers.");
+                    }
+                    else if(text.equalsIgnoreCase("ActiveProcesses")) {
+                        sendMessage(getAdminChatId(), "Active Games : " + currentlyActiveGames.size() + "\nPeople buying tickets : " + playersBuyingTickets.size());
                     } else if(text.equalsIgnoreCase("Commands")) {
-                        sendMessage(chat_id, "Run\nMinPlayers = __\nTestMode\nExitTestMode\nStop\nCommands");
+                        sendMessage(chat_id, "Run\nMinPlayers = __\nTestMode\nExitTestMode\nStop\nStartServerSwitchProcess" +
+                                "\nActiveProcesses\nCommands");
                     }
                     sendMessage(update.getMessage().getChatId(), "shouldRunGame = " + shouldRunGame + "\nTestMode = " + testMode +
-                            "\nMinPlayers = " + minimumNumberOfPlayers);
+                            "\nMinPlayers = " + minimumNumberOfPlayers + "\nWaitingToSwitchServers = " + waitingToSwitchServers);
                 }
                 // Can add special operation for admin here
             }
@@ -128,6 +137,12 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             int fromId = update.getMessage().getFrom().getId();
             long chat_id = update.getMessage().getChatId();
             String[] inputMsg = update.getMessage().getText().trim().split(" ");
+            if(waitingToSwitchServers) {
+                sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
+                        "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
+                        "done after every 20 days.");
+                return;
+            }
             switch (inputMsg[0]) {
 
                 case "/startgame":
@@ -501,8 +516,8 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                         sendMessage.setText("You don't have enough tickets");
                                     }
                                 } catch (Exception e) {
-                                    sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
-                                    sendMessage.setText("Amount has to be a number");
+                                    sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer\n\n" +
+                                            "Amount has to be a number");
                                 }
                             }
                         } else {
