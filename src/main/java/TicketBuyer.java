@@ -86,9 +86,11 @@ public class TicketBuyer {
             Instant paymentEndInstant = Instant.now().plus(3, ChronoUnit.MINUTES);
 
             boolean didPay = false;
+            Instant paymentEndInstant2 = paymentEndInstant.plus(30, ChronoUnit.SECONDS);
+            boolean payIns2 = true;
 
             OUTER :
-            while (Instant.now().compareTo(paymentEndInstant) < 0) {
+            while (Instant.now().compareTo(paymentEndInstant2) < 0) {
                 while (numberOfTransactionsExamined < numberOfTransactionsFetched.get() && numberOfTransactionsFetched.get() != 0) {
                     try {
                         TransactionData transactionData = splitInputData(allCRTSTransactions.get(numberOfTransactionsExamined));
@@ -109,6 +111,11 @@ public class TicketBuyer {
                     buildNewConnectionToTomoNetwork(false);
                 }
                 wait500ms();
+                if(payIns2 && Instant.now().compareTo(paymentEndInstant) > 0) {
+                    payIns2 = false;
+                    lucky_gates_bot.sendMessage(chat_id, "The payment time has ended. Any payments made from this point onwards will not be " +
+                            "taken into account. The bot will now try to verify if a payment has been made or not.");
+                }
             }
             disposable.dispose();
 
@@ -116,7 +123,7 @@ public class TicketBuyer {
                 lucky_gates_bot.sendMessage(chat_id, "Payment confirmed. Successfully added tickets to your account");
                 lucky_gates_bot.playerTicketPurchaseEnded((int) chat_id, numberOfTicketsToBuy, true);
             } else {
-                lucky_gates_bot.sendMessage(chat_id, "We were unable to confirm you payment. This purchase has been canceled");
+                lucky_gates_bot.sendMessage(chat_id, "We were unable to confirm you payment. This purchase has been cancelled");
                 lucky_gates_bot.playerTicketPurchaseEnded((int) chat_id, numberOfTicketsToBuy, false);
             }
 

@@ -123,6 +123,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             }
         }
         if(!shouldRunGame) {
+            sendMessage(update.getMessage().getChatId(), "Bot under maintenance. Please try again later.");
             return;
         }
 
@@ -140,7 +141,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             if(waitingToSwitchServers) {
                 sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
                         "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
-                        "done after every 20 days.");
+                        "done after every 15 days.");
                 return;
             }
             switch (inputMsg[0]) {
@@ -155,7 +156,12 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                             return;
                         }
                         if (currentlyActiveGames.containsKey(chat_id)) {
-                            sendMessage.setText("A game is already running. Please wait for current game to end to start a new one or you can join the current game");
+                            Game game = currentlyActiveGames.get(chat_id);
+                            if(!game.hasGameStarted) {
+                                sendMessage.setText("A game is already running. Please wait for current game to end to start a new one or you can join the current game");
+                            } else {
+                                shouldSend = false;
+                            }
                         } else {
                             Document document = new Document(idKey, fromId);
                             Document foundAddyDoc = (Document) userDataCollection.find(document).first();
@@ -178,14 +184,16 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                         execute(sendAnimation);
                                         shouldSend = false;
                                     } else {
-                                        sendMessage.setText("You have 0 tickets. Cannot start or join a game");
+                                        sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                                "@"+ getBotUsername() + ") to buy tickets");
                                     }
                                 } catch (Exception e) {
                                     e.printStackTrace();
                                     shouldSend = false;
                                 }
                             } else {
-                                sendMessage.setText("You have 0 tickets. Cannot start or join a game");
+                                sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                        "@" + getBotUsername() + ") to buy tickets");
                                 document.append(ticketKey, 0);
                                 userDataCollection.insertOne(document);
                             }
@@ -207,6 +215,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                 case "/join":
                 case "/join@Lucky_Gates_Bot": {
                     SendMessage sendMessage = new SendMessage();
+                    boolean shouldSend = true;
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         Document document = new Document(idKey, fromId);
                         Document foundAddyDoc = (Document) userDataCollection.find(document).first();
@@ -216,7 +225,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                 if (currentlyActiveGames.containsKey(chat_id)) {
                                     Game game = currentlyActiveGames.get(chat_id);
                                     if(game.hasGameStarted){
-                                    sendMessage.setText("Current game has already begun. Please wait for next game");
+                                        shouldSend = false;
                                 } else {
                                         if (game.addPlayer(update.getMessage().getFrom())) {
                                         sendMessage.setText("You have successfully join the game @" + update.getMessage().getFrom().getUserName());
@@ -228,21 +237,25 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                 sendMessage.setText("No Games Active. Start a new one to join");
                                 }
                             } else {
-                                sendMessage.setText("You have 0 tickets. Cannot start or join a game");
+                                sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                        "@" + getBotUsername() + ") to buy tickets");
                             }
                         } else {
-                            sendMessage.setText("You have 0 tickets. Cannot start or join a game");
+                            sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                    "@" + getBotUsername() + ") to buy tickets");
                             document.append(ticketKey, 0);
                             userDataCollection.insertOne(document);
                         }
                     } else {
                         sendMessage.setText("This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    try {
-                        execute(sendMessage);
-                    } catch (TelegramApiException e) {
-                        e.printStackTrace();
+                    if(shouldSend) {
+                        sendMessage.setChatId(chat_id);
+                        try {
+                            execute(sendMessage);
+                        } catch (TelegramApiException e) {
+                            e.printStackTrace();
+                        }
                     }
                     break;
                 }
@@ -255,7 +268,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         if (currentlyActiveGames.containsKey(chat_id)) {
                             Game game = currentlyActiveGames.get(chat_id);
                             if(game.hasGameStarted){
-                                sendMessage.setText("Cannot begin. The current has already begun!");
+                                shouldSend = false;
                             } else {
                                 if (game.getGameInitiator() == fromId) {
                                     if(game.beginGame()) {
@@ -297,6 +310,9 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
                 case "/mytickets":
                 case "/mytickets@Lucky_Gates_Bot": {
+                    if(currentlyActiveGames.containsKey(chat_id)) {
+                        return;
+                    }
                     SendMessage sendMessage = new SendMessage();
                     if(!update.getMessage().getChat().isUserChat()) {
                         sendMessage.setText("Please use /mytickets command in private chat");
@@ -327,27 +343,35 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     SendMessage sendMessage = new SendMessage();
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (currentlyActiveGames.containsKey(chat_id)) {
-                            Document document = new Document(idKey, fromId);
-                            Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                            if(foundAddyDoc != null) {
-                                int tickets = (int) foundAddyDoc.get(ticketKey);
-                                if(tickets > 0) {
-                                    Game game = currentlyActiveGames.get(chat_id);
-                                    if(game.payWithTicketForThisUser(fromId)){
-                                        tickets--;
-                                        Bson updatedAddyDoc = new Document(ticketKey, tickets);
-                                        Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                                        userDataCollection.updateOne(foundAddyDoc, updateAddyDocOperation);
-                                        shouldSend = false;
+                            Game game = currentlyActiveGames.get(chat_id);
+                            if(game.isAcceptingEntryPayment){
+                                Document document = new Document(idKey, fromId);
+                                Document foundAddyDoc = (Document) userDataCollection.find(document).first();
+                                if(foundAddyDoc != null) {
+                                    int tickets = (int) foundAddyDoc.get(ticketKey);
+                                    if(tickets > 0) {
+                                        if(game.payWithTicketForThisUser(fromId)){
+                                            tickets--;
+                                            Bson updatedAddyDoc = new Document(ticketKey, tickets);
+                                            Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
+                                            userDataCollection.updateOne(foundAddyDoc, updateAddyDocOperation);
+                                            shouldSend = false;
+                                        }
+                                    } else {
+                                        sendMessage.setText("@" + update.getMessage().getFrom().getUserName() + " You have 0 tickets. Cannot " +
+                                                "pay with tickets.");
                                     }
                                 } else {
-                                    sendMessage.setText("@" + update.getMessage().getFrom().getUserName() + " You have 0 tickets. Cannot " +
-                                            "pay with tickets.");
+                                    sendMessage.setText("You have 0 tickets. Cannot pay with tickets");
+                                    document.append(ticketKey, 0);
+                                    userDataCollection.insertOne(document);
                                 }
                             } else {
-                                sendMessage.setText("You have 0 tickets. Cannot pay with tickets");
-                                document.append(ticketKey, 0);
-                                userDataCollection.insertOne(document);
+                                if(game.hasGameStarted) {
+                                    shouldSend = false;
+                                } else {
+                                    sendMessage.setText("Not accepting any entry Payments at the moment");
+                                }
                             }
                         } else {
                             sendMessage.setText("@" + update.getMessage().getFrom().getUserName() + " No active game. Not accepting any " +
@@ -369,6 +393,9 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
                 case "/buytickets":
                 case "/buytickets@Lucky_Gates_Bot": {
+                    if(currentlyActiveGames.containsKey(chat_id)) {
+                        return;
+                    }
                     SendMessage sendMessage = new SendMessage();
                     boolean shouldSend = true;
                     if(!update.getMessage().getChat().isUserChat()) {
@@ -448,6 +475,9 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     sendMessage.setText("You are not the winner. You cannot use this command");
                                 }
                             } else {
+                                if(game.hasGameStarted) {
+                                    return;
+                                }
                                 sendMessage.setText("Cannot use this command at the moment. Use this command to receive prize after winning a game");
                             }
                         } else {
@@ -469,6 +499,12 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
                 case "/transfertickets":
                 case "/transfertickets@Lucky_Gates_Bot": {
+                    if(currentlyActiveGames.containsKey(chat_id)) {
+                        Game game = currentlyActiveGames.get(chat_id);
+                        if(game.hasGameStarted) {
+                            return;
+                        }
+                    }
                     SendMessage sendMessage = new SendMessage();
                     if(update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if(update.getMessage().isReply()) {
@@ -539,7 +575,6 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                 case "/addtickets":
                 case "/addtickets@Lucky_Gates_Bot": {
                     if(fromId != getAdminChatId()) {
-                        sendMessage(chat_id, "You are not allowed to use this command");
                         return;
                     } else {
                         if(update.getMessage().isReply()) {
@@ -570,20 +605,6 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         }
                     }
                     break;
-                }
-
-                default: {
-                    String msg = update.getMessage().getText().trim();
-                    if(msg.endsWith("@Lucky_Gates_Bot") && msg.startsWith("/")) {
-                        SendMessage sendMessage = new SendMessage();
-                        sendMessage.setText("No such command exists");
-                        sendMessage.setChatId(chat_id);
-                        try {
-                            execute(sendMessage);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
                 }
             }
         }

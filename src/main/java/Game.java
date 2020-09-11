@@ -210,11 +210,6 @@ public class Game {
 
                 notResponseCount = 0;
                 while (currentTurnOfPlayer < numberOfPlayers) {
-                    wait500ms();
-                    wait500ms();
-                    wait500ms();
-                    wait500ms();
-                    lucky_gates_bot.sendMessage(chat_id, "Current turn of @" + players.get(player_Ids.get(currentTurnOfPlayer)).getUserName());
                     startTurnOfPlayer(currentTurnOfPlayer);
                     currentTurnOfPlayer++;
                 }
@@ -356,7 +351,11 @@ public class Game {
                         halfValue = 45;
                         quarterValue = 20;
                         wait500ms();
-                        lucky_gates_bot.sendMessage(chat_id, "", "https://media.giphy.com/media/jQ8sHpRHbdqW1VsDvq/giphy.gif");
+                        wait500ms();
+                        wait500ms();
+                        wait500ms();
+                        lucky_gates_bot.sendMessage(chat_id, "Current turn of @" + players.get(player_Ids.get(playerIndex)).getUserName(),
+                                "https://media.giphy.com/media/jQ8sHpRHbdqW1VsDvq/giphy.gif");
                         lucky_gates_bot.sendMessageWithButton(chat_id, "\uD83D\uDEAA You are standing in front of 6 doors \uD83D\uDEAA\n\n1 random " +
                                         "doors contain 3️⃣ points.\nAnother random door contains 2️⃣ points\n2 other doors contain 1️⃣ point each." +
                                         "\nRemaining 2 doors contains 0️⃣ points each.\n\nPick one door within ⏳ 90 seconds or else you will loose 1️⃣ point.",
@@ -415,12 +414,12 @@ public class Game {
                         lucky_gates_bot.sendMessage(chat_id, "The gatekeeper will now open two doors", "https://media.giphy.com/media/J7fawBXeSAu3e/giphy.gif");
                         wait500ms();
                         wait500ms();
+                        wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
                                         doorPattern.toString() + "\n\n\uD83D\uDEAA Door " + doorWith1 + " has 1️⃣ point behind it." +
                                         "\n\uD83D\uDEAA Door " + doorWith0 + " has 0️⃣ points behind it.\n\nYou now have an option " +
                                         "to switch to one of the remaining three doors.\nYou have ⏳ 1 minute to switch. Would you like to switch?",
                                 new String[] {"Switch", "Don't Switch"}, new String[] {"Switch", "Don't Switch"});
-                        wait500ms();
                         wait500ms();
                         wait500ms();
                         endTime = Instant.now().plus(60, ChronoUnit.SECONDS);
@@ -443,6 +442,8 @@ public class Game {
                         }
                         halfValue = 30;
                         quarterValue = 15;
+                        wait500ms();
+                        wait500ms();
                         wait500ms();
                         wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
