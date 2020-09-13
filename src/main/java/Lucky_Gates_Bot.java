@@ -38,7 +38,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     final String botControlDatabaseName = "All-Bots-Command-Centre";
     final String botName = "Lucky Gates Bot";
     final String idKey = "UserID", ticketKey = "Tickets";
-    final ArrayList<Integer> playersBuyingTickets = new ArrayList<>();
+    final HashMap<Integer, String> playersBuyingTickets = new HashMap<>();
     final HashMap<Long, TicketBuyer> ticketBuyers = new HashMap<>();
     final HashMap<Long, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
     MongoClient mongoClient;
@@ -138,7 +138,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             int fromId = update.getMessage().getFrom().getId();
             long chat_id = update.getMessage().getChatId();
             String[] inputMsg = update.getMessage().getText().trim().split(" ");
-            if(waitingToSwitchServers) {
+            if(waitingToSwitchServers && !inputMsg[0].startsWith("/receive")) {
                 sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
                         "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
                         "done after every 15 days.");
@@ -217,34 +217,34 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     SendMessage sendMessage = new SendMessage();
                     boolean shouldSend = true;
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        Document document = new Document(idKey, fromId);
-                        Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                        if(foundAddyDoc != null) {
-                            int tickets = (int) foundAddyDoc.get(ticketKey);
-                            if(tickets > 0) {
-                                if (currentlyActiveGames.containsKey(chat_id)) {
-                                    Game game = currentlyActiveGames.get(chat_id);
-                                    if(game.hasGameStarted){
-                                        shouldSend = false;
-                                } else {
-                                        if (game.addPlayer(update.getMessage().getFrom())) {
-                                        sendMessage.setText("You have successfully join the game @" + update.getMessage().getFrom().getUserName());
-                                    } else {
-                                        sendMessage.setText("You are already in the game @" + update.getMessage().getFrom().getUserName());
-                                    }
-                                    }
-                                } else {
-                                sendMessage.setText("No Games Active. Start a new one to join");
-                                }
+                        if (currentlyActiveGames.containsKey(chat_id)) {
+                            Game game = currentlyActiveGames.get(chat_id);
+                            if(game.hasGameStarted){
+                                shouldSend = false;
                             } else {
-                                sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
-                                        "@" + getBotUsername() + ") to buy tickets");
+                                Document document = new Document(idKey, fromId);
+                                Document foundAddyDoc = (Document) userDataCollection.find(document).first();
+                                if(foundAddyDoc != null) {
+                                    int tickets = (int) foundAddyDoc.get(ticketKey);
+                                    if(tickets > 0) {
+                                        if (game.addPlayer(update.getMessage().getFrom())) {
+                                            sendMessage.setText("You have successfully join the game @" + update.getMessage().getFrom().getUserName());
+                                        } else {
+                                            sendMessage.setText("You are already in the game @" + update.getMessage().getFrom().getUserName());
+                                        }
+                                    } else {
+                                        sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                                "@" + getBotUsername() + ") to buy tickets");
+                                    }
+                                } else {
+                                    sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                            "@" + getBotUsername() + ") to buy tickets");
+                                    document.append(ticketKey, 0);
+                                    userDataCollection.insertOne(document);
+                                }
                             }
                         } else {
-                            sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
-                                    "@" + getBotUsername() + ") to buy tickets");
-                            document.append(ticketKey, 0);
-                            userDataCollection.insertOne(document);
+                            sendMessage.setText("No Games Active. Start a new one to join");
                         }
                     } else {
                         sendMessage.setText("This command can only be run in a group!!!");
@@ -404,43 +404,47 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         if (inputMsg.length != 3) {
                             sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets your_Tomo_Addy amount_To_Buy");
                         } else {
-                            if (playersBuyingTickets.contains(fromId)) {
+                            if (playersBuyingTickets.containsKey(fromId)) {
                                 sendMessage.setText("Please complete your current purchase before starting a new purchase");
                             } else {
                                 Document searchDoc = new Document(idKey, fromId);
                                 Document foundDoc = (Document) userDataCollection.find(searchDoc).first();
-                                if (foundDoc != null) {
-                                    int amountToBuy;
-                                    try {
-                                        amountToBuy = Integer.parseInt(inputMsg[2]);
-                                        TicketBuyer ticketBuyer = new TicketBuyer(this, chat_id, amountToBuy,
-                                                inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
-                                        playersBuyingTickets.add(fromId);
-                                        ticketBuyers.put(chat_id, ticketBuyer);
-                                        shouldSend = false;
-                                    } catch (Exception e) {
-                                        sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets " +
-                                                "your_Tomo_Addy amount_To_Buy\n\n\nWhere amount has to be a number");
-                                    }
-                                } else {
-                                    try {
-                                        searchDoc.append(ticketKey, 0);
-                                        userDataCollection.insertOne(searchDoc);
+                                if(!playersBuyingTickets.containsValue(inputMsg[1])) {
+                                    if (foundDoc != null) {
                                         int amountToBuy;
                                         try {
                                             amountToBuy = Integer.parseInt(inputMsg[2]);
                                             TicketBuyer ticketBuyer = new TicketBuyer(this, chat_id, amountToBuy,
-                                                        inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
-                                            playersBuyingTickets.add(fromId);
+                                                    inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                            playersBuyingTickets.put(fromId, inputMsg[1]);
                                             ticketBuyers.put(chat_id, ticketBuyer);
                                             shouldSend = false;
                                         } catch (Exception e) {
                                             sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets " +
-                                                    "your_Tomo_Addy amount_To_Buy\n\nWhere amount has to be a number");
+                                                    "your_Tomo_Addy amount_To_Buy\n\n\nWhere amount has to be a number");
                                         }
-                                    } catch (Exception e) {
-                                        sendMessage.setText("Invalid Format");
+                                    } else {
+                                        try {
+                                            searchDoc.append(ticketKey, 0);
+                                            userDataCollection.insertOne(searchDoc);
+                                            int amountToBuy;
+                                            try {
+                                                amountToBuy = Integer.parseInt(inputMsg[2]);
+                                                TicketBuyer ticketBuyer = new TicketBuyer(this, chat_id, amountToBuy,
+                                                        inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                                playersBuyingTickets.put(fromId, inputMsg[1]);
+                                                ticketBuyers.put(chat_id, ticketBuyer);
+                                                shouldSend = false;
+                                            } catch (Exception e) {
+                                                sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets " +
+                                                        "your_Tomo_Addy amount_To_Buy\n\nWhere amount has to be a number");
+                                            }
+                                        } catch (Exception e) {
+                                            sendMessage.setText("Invalid Format");
+                                        }
                                     }
+                                } else {
+                                    sendMessage.setText("This wallet is already being used for a purchase. Please use different wallet address");
                                 }
                             }
                         }

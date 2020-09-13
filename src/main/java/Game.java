@@ -89,7 +89,7 @@ public class Game {
                 }
 
                 if(gameCurrentTime.compareTo(gameDestroyTime) > 0) {
-                    if(numberOfPlayers >= 6) {
+                    if(numberOfPlayers >= minimumNumberOfPlayers) {
                         lucky_gates_bot.sendMessage(chat_id, "Join time over. Starting Game with " + numberOfPlayers + " players");
                         wait500ms();
                     } else {
@@ -354,6 +354,7 @@ public class Game {
                         wait500ms();
                         wait500ms();
                         wait500ms();
+                        wait500ms();
                         lucky_gates_bot.sendMessage(chat_id, "Current turn of @" + players.get(player_Ids.get(playerIndex)).getUserName(),
                                 "https://media.giphy.com/media/jQ8sHpRHbdqW1VsDvq/giphy.gif");
                         lucky_gates_bot.sendMessageWithButton(chat_id, "\uD83D\uDEAA You are standing in front of 6 doors \uD83D\uDEAA\n\n1 random " +
@@ -361,7 +362,6 @@ public class Game {
                                         "\nRemaining 2 doors contains 0️⃣ points each.\n\nPick one door within ⏳ 90 seconds or else you will loose 1️⃣ point.",
                                 new String[] {"\uD83D\uDEAA 1", "\uD83D\uDEAA 2", "\uD83D\uDEAA 3", "\uD83D\uDEAA 4", "\uD83D\uDEAA 5", "\uD83D\uDEAA 6"},
                                 new String[] {"1", "2", "3", "4", "5", "6"});
-                        wait500ms();
                         wait500ms();
                         wait500ms();
                         endTime = Instant.now().plus(90, ChronoUnit.SECONDS);
@@ -415,12 +415,12 @@ public class Game {
                         wait500ms();
                         wait500ms();
                         wait500ms();
+                        wait500ms();
                         lucky_gates_bot.sendMessageWithButton(chat_id, "@" + players.get(player_Ids.get(playerIndex)).getUserName() + "\n\n" +
                                         doorPattern.toString() + "\n\n\uD83D\uDEAA Door " + doorWith1 + " has 1️⃣ point behind it." +
                                         "\n\uD83D\uDEAA Door " + doorWith0 + " has 0️⃣ points behind it.\n\nYou now have an option " +
                                         "to switch to one of the remaining three doors.\nYou have ⏳ 1 minute to switch. Would you like to switch?",
                                 new String[] {"Switch", "Don't Switch"}, new String[] {"Switch", "Don't Switch"});
-                        wait500ms();
                         wait500ms();
                         endTime = Instant.now().plus(60, ChronoUnit.SECONDS);
                         halfTime = endTime.minus(30, ChronoUnit.SECONDS);
