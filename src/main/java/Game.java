@@ -1,6 +1,5 @@
 import org.apache.log4j.Logger;
 import org.telegram.telegrambots.meta.api.objects.User;
-import org.web3j.abi.datatypes.Int;
 import org.web3j.contracts.eip20.generated.ERC20;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
@@ -16,7 +15,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 
 public class Game {
 
@@ -91,6 +89,7 @@ public class Game {
                 if(gameCurrentTime.compareTo(gameDestroyTime) > 0) {
                     if(numberOfPlayers >= minimumNumberOfPlayers) {
                         lucky_gates_bot.sendMessage(chat_id, "Join time over. Starting Game with " + numberOfPlayers + " players");
+                        hasGameStarted = true;
                         wait500ms();
                     } else {
                         lucky_gates_bot.sendMessage(chat_id, "Not enough players. Cancelling the game.");
@@ -102,6 +101,13 @@ public class Game {
             }
 
             if (shouldClose) {
+                for(int i = 0; i < numberOfPlayers; i++) {
+                    players.remove(player_Ids.get(i));
+                    player_Ids.remove(i);
+                    i--;
+                    numberOfPlayers--;
+                }
+                lucky_gates_bot.deleteGame(chat_id);
                 try {
                     join();
                 } catch (InterruptedException e) {

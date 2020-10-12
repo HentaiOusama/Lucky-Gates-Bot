@@ -14,8 +14,6 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import java.math.BigInteger;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -138,11 +136,13 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             int fromId = update.getMessage().getFrom().getId();
             long chat_id = update.getMessage().getChatId();
             String[] inputMsg = update.getMessage().getText().trim().split(" ");
-            if(waitingToSwitchServers && !inputMsg[0].startsWith("/receive")) {
-                sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
-                        "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
-                        "done after every 15 days.");
-                return;
+            if(waitingToSwitchServers) {
+                if(!inputMsg[0].startsWith("/receive") && !inputMsg[0].startsWith("/paywithticket")) {
+                    sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
+                            "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
+                            "done after every 15 days.");
+                    return;
+                }
             }
             switch (inputMsg[0]) {
 
