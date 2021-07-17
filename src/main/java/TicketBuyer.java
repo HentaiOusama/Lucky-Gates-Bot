@@ -24,7 +24,7 @@ public class TicketBuyer {
     final BigInteger TotalAmountToSpend;
     private final Web3j web3j;
     private String transactionHash = null;
-    private volatile boolean checked = false;
+    private volatile boolean checked = false, shouldNotify = true;
 
     TicketBuyer(Lucky_Gates_Bot lucky_gates_bot, String chatId, int numberOfTicketsToBuy, String addyOfPlayer, String ourWallet,
                 String ANONContractAddress, BigInteger TicketCost) {
@@ -84,7 +84,8 @@ public class TicketBuyer {
                                 didPay = true;
                                 break;
                             }
-                        } else {
+                        } else if (shouldNotify) {
+                            shouldNotify = false;
                             lucky_gates_bot.sendMessage(chatId, "Transaction with given hash not found. It is possible that " +
                                     "transaction is still pending. Please use the /check command again after the transaction is confirmed.");
                         }
@@ -93,17 +94,21 @@ public class TicketBuyer {
                     }
                 }
 
-                wait500ms();
+                wait1500ms();
+                wait1500ms();
+                wait1500ms();
+                wait1500ms();
+                wait1500ms();
+                wait1500ms();
             }
 
             if(didPay) {
-                lucky_gates_bot.sendMessage(chatId, "Payment confirmed. Successfully added tickets to your account");
                 lucky_gates_bot.playerTicketPurchaseEnded(chatId, numberOfTicketsToBuy, true);
+                lucky_gates_bot.sendMessage(chatId, "Payment confirmed. Successfully added tickets to your account");
             } else {
                 lucky_gates_bot.sendMessage(chatId, "We were unable to confirm you payment. This purchase has been cancelled");
                 lucky_gates_bot.playerTicketPurchaseEnded(chatId, numberOfTicketsToBuy, false);
             }
-
         }
     };
 
@@ -131,9 +136,9 @@ public class TicketBuyer {
         return currentTransactionData;
     }
 
-    public void wait500ms() {
+    public void wait1500ms() {
         try {
-            Thread.sleep(500);
+            Thread.sleep(1500);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -142,5 +147,6 @@ public class TicketBuyer {
     public void setTransactionHash(String hash) {
         transactionHash = hash;
         checked = false;
+        shouldNotify = true;
     }
 }

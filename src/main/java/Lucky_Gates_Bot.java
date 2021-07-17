@@ -18,6 +18,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,13 +35,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     final HashMap<String, TicketBuyer> ticketBuyers = new HashMap<>();
     final HashMap<String, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
     boolean shouldRunGame, waitingToSwitchServers = false;
-
-    // Callback Query
-    boolean gotResponse = false;
-    String responseMsg = "";
-    String callbackQueryId = "";
-    int responseMsgId = 0;
-    long replier = 0;
+    Instant nextMin = Instant.now();
 
     // MongoDB Vars
     final MongoClient mongoClient;
@@ -129,29 +125,32 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
 
         if (update.hasCallbackQuery()) {
-            update.getUpdateId();
-            callbackQueryId = update.getCallbackQuery().getId();
-            responseMsgId = update.getCallbackQuery().getMessage().getMessageId();
-            responseMsg = update.getCallbackQuery().getData();
-            replier = update.getCallbackQuery().getFrom().getId();
-            gotResponse = true;
+            String chatId = update.getCallbackQuery().getMessage().getChatId().toString();
+            if (currentlyActiveGames.containsKey(chatId)) {
+                currentlyActiveGames.get(chatId).acceptCallbackQuery(
+                        update.getCallbackQuery().getId(),
+                        update.getCallbackQuery().getMessage().getMessageId(),
+                        update.getCallbackQuery().getData(),
+                        update.getCallbackQuery().getFrom().getId()
+                );
+            }
         } else if (update.hasMessage()) {
             long fromId = update.getMessage().getFrom().getId();
             String userName = update.getMessage().getFrom().getUserName();
             String chatId = update.getMessage().getChatId().toString();
             String[] inputMsg = update.getMessage().getText().trim().split("[ ]+");
-            if (waitingToSwitchServers) {
-                if (!inputMsg[0].startsWith("/receive") && !inputMsg[0].startsWith("/paywithticket")) {
-                    sendMessage(chatId, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
-                            "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
-                            "done after every 15 days.");
-                    return;
-                }
+            inputMsg[0] = inputMsg[0].toLowerCase().trim().split("@")[0];
+            if (waitingToSwitchServers && (inputMsg[0].equalsIgnoreCase("/startgame")
+                    || inputMsg[0].equalsIgnoreCase("/buytickets"))) {
+                sendMessage(chatId, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
+                        "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
+                        "done after every 15 days.");
+                return;
             }
             switch (inputMsg[0]) {
-                case "/startgame", "/startgame@Lucky_Gates_Bot" -> {
+                case "/startgame" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if (!(chatId.equalsIgnoreCase("-1001477389485") &&
+                        if (!(chatId.equalsIgnoreCase("-1001477389485") ||
                                 chatId.equalsIgnoreCase("-1001529888769"))) {
                             sendMessage(chatId, "This bot is only built to be used in ANON INU GROUP");
                             return;
@@ -198,7 +197,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/join", "/join@Lucky_Gates_Bot" -> {
+                case "/join" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (currentlyActiveGames.containsKey(chatId)) {
                             Game game = currentlyActiveGames.get(chatId);
@@ -231,7 +230,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/begin", "/begin@Lucky_Gates_Bot" -> {
+                case "/begin" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (currentlyActiveGames.containsKey(chatId)) {
                             Game game = currentlyActiveGames.get(chatId);
@@ -254,7 +253,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/mytickets", "/mytickets@Lucky_Gates_Bot" -> {
+                case "/mytickets" -> {
                     if (currentlyActiveGames.containsKey(chatId)) {
                         return;
                     }
@@ -273,7 +272,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         }
                     }
                 }
-                case "/paywithticket", "/paywithticket@Lucky_Gates_Bot" -> {
+                case "/paywithticket" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (currentlyActiveGames.containsKey(chatId)) {
                             Game game = currentlyActiveGames.get(chatId);
@@ -311,7 +310,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/buytickets", "/buytickets@Lucky_Gates_Bot" -> {
+                case "/buytickets" -> {
                     if (!update.getMessage().getChat().isUserChat()) {
                         sendMessage(chatId, "Please use /buytickets command in private chat @" + getBotUsername());
                     } else {
@@ -319,7 +318,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                             sendMessage(chatId, """
                                     Proper format to use this command is (Everything space separated) :
 
-                                    /buytickets your_BSC_Addy amount_To_Buy""");
+                                    /buytickets   your_BSC_Addy   amount_To_Buy""");
                         } else {
                             if (playersBuyingTickets.containsKey(fromId)) {
                                 sendMessage(chatId, "Please complete your current purchase before starting a new purchase");
@@ -339,7 +338,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                             sendMessage(chatId, """
                                                     Proper format to use this command is (Everything space separated) :
 
-                                                    /buytickets your_BSC_Addy amount_To_Buy
+                                                    /buytickets   your_BSC_Addy   amount_To_Buy
 
 
                                                     Where amount has to be a number""");
@@ -359,7 +358,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                                 sendMessage(chatId, """
                                                         Proper format to use this command is (Everything space separated) :
 
-                                                        /buytickets your_BSC_Addy amount_To_Buy
+                                                        /buytickets   your_BSC_Addy   amount_To_Buy
 
                                                         Where amount has to be a number""");
                                             }
@@ -374,7 +373,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         }
                     }
                 }
-                case "/receive", "/receive@Lucky_Gates_Bot" -> {
+                case "/receive" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (currentlyActiveGames.containsKey(chatId)) {
                             Game game = currentlyActiveGames.get(chatId);
@@ -383,7 +382,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     if (inputMsg.length == 2) {
                                         game.startPrizeSend(inputMsg[1]);
                                     } else {
-                                        sendMessage(chatId, "Invalid Format. Proper Format :-\n/receive@Lucky_Gates_Bot TOMO_Address");
+                                        sendMessage(chatId, "Invalid Format. Proper Format :-\n/receive@Lucky_Gates_Bot   BSC_Address");
                                     }
                                 } else {
                                     sendMessage(chatId, "You are not the winner. You cannot use this command");
@@ -401,7 +400,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/transfertickets", "/transfertickets@Lucky_Gates_Bot" -> {
+                case "/transfertickets" -> {
                     if (currentlyActiveGames.containsKey(chatId)) {
                         Game game = currentlyActiveGames.get(chatId);
                         if (game.hasGameStarted) {
@@ -411,11 +410,11 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
                         if (update.getMessage().isReply()) {
                             if (inputMsg.length != 2) {
-                                sendMessage(chatId, "Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
+                                sendMessage(chatId, "Proper format to use this command is : /transfertickets@Lucky_Gates_Bot   amountToTransfer");
                             } else {
                                 try {
                                     int amountToTransfer = Integer.parseInt(inputMsg[1]);
-                                    int ToId = Math.toIntExact(update.getMessage().getReplyToMessage().getFrom().getId());
+                                    long ToId = update.getMessage().getReplyToMessage().getFrom().getId();
                                     Document FromDocument = new Document(idKey, fromId);
                                     Document ToDocument = new Document(idKey, ToId);
                                     Document foundFromDoc = userDataCollection.find(FromDocument).first();
@@ -454,7 +453,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                     }
                                 } catch (Exception e) {
                                     sendMessage(chatId, """
-                                            Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer
+                                            Proper format to use this command is : /transfertickets@Lucky_Gates_Bot   amountToTransfer
 
                                             Amount has to be a number""");
                                 }
@@ -467,10 +466,10 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         sendMessage(chatId, "This command can only be run in a group!!!");
                     }
                 }
-                case "/addtickets", "/addtickets@Lucky_Gates_Bot" -> {
+                case "/addtickets" -> {
                     if (getAdminChatId().equalsIgnoreCase(String.valueOf(fromId))) {
                         if (update.getMessage().isReply()) {
-                            int Id = Math.toIntExact(update.getMessage().getReplyToMessage().getFrom().getId());
+                            long Id = update.getMessage().getReplyToMessage().getFrom().getId();
                             Document document = new Document(idKey, Id);
                             Document foundDoc = userDataCollection.find(document).first();
                             int ticks = Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]);
@@ -497,6 +496,23 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                         }
                     }
                 }
+                case "/checktrx" -> {
+                    if (!(update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat())) {
+                        sendMessage(chatId, "This command can only be used in private chat");
+                    } else {
+                        if (ticketBuyers.containsKey(chatId)) {
+                            if (inputMsg.length != 2) {
+                                sendMessage(chatId, "Invalid format. Correct format: -\n" +
+                                        "/checkTrx   trxHash");
+                            } else {
+                                ticketBuyers.get(chatId).setTransactionHash(inputMsg[1]);
+                                sendMessage(chatId, "Please wait for bot to verify the transaction hash");
+                            }
+                        } else {
+                            sendMessage(chatId, "You are not buying any tickets.");
+                        }
+                    }
+                }
             }
         }
     }
@@ -513,11 +529,14 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
 
     public void sendMessage(String chat_id, String msg, String... url) {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        if (Instant.now().compareTo(nextMin) < 0) {
+            try {
+                Thread.sleep(700);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
+        nextMin = Instant.now().plus(750, ChronoUnit.MILLIS);
         if (url.length == 0) {
             SendMessage sendMessage = new SendMessage();
             sendMessage.setText(msg);
@@ -552,11 +571,14 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     }
 
     public void sendMessageWithButton(String chat_id, String msg, String[] buttonText, String[] buttonValues) {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        if (Instant.now().compareTo(nextMin) < 0) {
+            try {
+                Thread.sleep(700);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
+        nextMin = Instant.now().plus(750, ChronoUnit.MILLIS);
         SendMessage sendMessage = new SendMessage();
         sendMessage.setText(msg);
         sendMessage.setChatId(String.valueOf(chat_id));
@@ -580,47 +602,33 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
     }
 
-    public void sendEditMessage(String chat_id, String msg, int msg_Id) {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    public void sendEditMessage(String callbackQueryId, String chat_id, String msg, int msg_Id) {
+        if (Instant.now().compareTo(nextMin) < 0) {
+            try {
+                Thread.sleep(700);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
+        nextMin = Instant.now().plus(750, ChronoUnit.MILLIS);
         EditMessageText editMessageText = new EditMessageText();
         editMessageText.setMessageId(msg_Id);
         editMessageText.setChatId(String.valueOf(chat_id));
         editMessageText.setText(msg);
         AnswerCallbackQuery answerCallbackQuery = new AnswerCallbackQuery();
         answerCallbackQuery.setCallbackQueryId(callbackQueryId);
-        callbackQueryId = "";
         try {
             execute(editMessageText);
             execute(answerCallbackQuery);
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
-
     }
 
-    public void setGotResponseFalse(String chat_id, String msg) {
-        sendEditMessage(chat_id, msg, responseMsgId);
-        gotResponse = false;
-        responseMsgId = 0;
-        responseMsg = "";
-    }
-
-    public boolean didGetResponse() {
-        return gotResponse;
-    }
-
-    public void wrongReplier() {
+    public void wrongReplier(String callbackQueryId) {
         AnswerCallbackQuery answerCallbackQuery = new AnswerCallbackQuery();
         answerCallbackQuery.setCallbackQueryId(callbackQueryId);
         answerCallbackQuery.setText("You are not allowed to pick during someone else's turn.");
-        callbackQueryId = "";
-        gotResponse = false;
-        responseMsgId = 0;
-        responseMsg = "";
         try {
             execute(answerCallbackQuery);
         } catch (Exception e) {
