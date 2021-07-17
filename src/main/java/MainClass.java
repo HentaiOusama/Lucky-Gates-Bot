@@ -20,9 +20,9 @@ import java.math.BigInteger;
  * */
 
 public class MainClass {
-    private static final String ourWallet = "0x50cd10c496a20e98c953e88d6ba7b3f6bc21c589",
+    private static final String ourWallet = "0x57AbCF8F01D08489236a490661aDB85c3aBB47Bc",
             ANONContractAddress = "0x9425315FeA3412fd4A0AfBfb69b99d8312dC749A";
-    private static final BigInteger joinCost = new BigInteger("1000000000000"); // 1000 ANON INU
+    private static final BigInteger joinCost = new BigInteger("5000000000000"); // 5000 ANON INU
     static int minimumNumberOfPlayers = 3;
 
     public static void main(String[] args) {

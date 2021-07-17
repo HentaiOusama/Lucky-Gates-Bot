@@ -18,6 +18,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.math.BigInteger;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -35,6 +36,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     final HashMap<String, TicketBuyer> ticketBuyers = new HashMap<>();
     final HashMap<String, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
     boolean shouldRunGame, waitingToSwitchServers = false;
+    Instant maxGameTime = Instant.now().plus(47, ChronoUnit.HALF_DAYS);
     Instant nextMin = Instant.now();
 
     // MongoDB Vars
@@ -154,6 +156,11 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                 chatId.equalsIgnoreCase("-1001529888769"))) {
                             sendMessage(chatId, "This bot is only built to be used in ANON INU GROUP");
                             return;
+                        } else if (Instant.now().compareTo(maxGameTime) >= 0) {
+                            sendMessage(chatId, "The bot will not accept request for new games for 1 - 2 hours. For smooth gaming experience, " +
+                                    "the bot restarts every 24 hours to maintain resources. Please try again after : " +
+                                    new SimpleDateFormat("dd/MM/yyyy hh:mm:ss a").format(maxGameTime.plus(2, ChronoUnit.HOURS)) +
+                                    " (+0:00 UTC)");
                         }
 
                         if (currentlyActiveGames.containsKey(chatId)) {
@@ -177,7 +184,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                         currentlyActiveGames.put(chatId, newGame);
                                         messagesForDeletion.put(chatId, new ArrayList<>());
                                         sendMessage(chatId, "New game has been created. Please gather at least " + minimumNumberOfPlayers + " players (up to " +
-                                                        "6 players maximum) within 6 minutes for game to begin. Players can use /join command to join the current game.",
+                                                        "10 players maximum) within 6 minutes for game to begin. Players can use /join command to join the current game.",
                                                 "https://media.giphy.com/media/xThuW1VhsD5J6cJD4k/giphy.gif");
                                     } else {
                                         sendMessage(chatId, "You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
@@ -313,6 +320,11 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                 case "/buytickets" -> {
                     if (!update.getMessage().getChat().isUserChat()) {
                         sendMessage(chatId, "Please use /buytickets command in private chat @" + getBotUsername());
+                    } else if (Instant.now().compareTo(maxGameTime) >= 0) {
+                        sendMessage(chatId, "The bot will not accept request for purchase for 1 - 2 hours. For smooth gaming experience, " +
+                                "the bot restarts every 24 hours to maintain resources. Please try again after : " +
+                                new SimpleDateFormat("dd/MM/yyyy hh:mm:ss a").format(maxGameTime.plus(2, ChronoUnit.HOURS)) +
+                                " (+0:00 UTC)");
                     } else {
                         if (inputMsg.length != 3) {
                             sendMessage(chatId, """

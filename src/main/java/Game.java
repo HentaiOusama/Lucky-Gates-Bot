@@ -178,7 +178,7 @@ public class Game {
             prizePool = TicketCost.multiply(new BigInteger(Integer.toString(numberOfPlayers - 1)));
 
             lucky_gates_bot.sendMessage(chatId, "Total prize for the winner will be : " + prizePool.divide(new BigInteger("1000000000")) +
-                    " ANON INU. This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 1000 ANON INU");
+                    " ANON INU. This was calculated by the formula : TicketCost * (NumberOfPlayers - 1). Cost of each ticket is 5000 ANON INU");
 
 
             ArrayList<String> nos = new ArrayList<>();
