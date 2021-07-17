@@ -1,7 +1,9 @@
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
+import com.mongodb.WriteConcern;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
@@ -9,10 +11,12 @@ import org.telegram.telegrambots.meta.api.methods.send.SendAnimation;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,407 +25,324 @@ import java.util.List;
 
 public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLongPollingBot {
 
-    private final String ourWallet, CRTSContractAddress;
+    private final String ourWallet, ANONContractAddress;
     private final BigInteger joinCost;
     private int minimumNumberOfPlayers;
+    private final HashMap<String, Game> currentlyActiveGames = new HashMap<>();
+    final HashMap<Long, String> playersBuyingTickets = new HashMap<>();
+    final HashMap<String, TicketBuyer> ticketBuyers = new HashMap<>();
+    final HashMap<String, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
+    boolean shouldRunGame, waitingToSwitchServers = false;
 
-    public HashMap<Long, Game> currentlyActiveGames = new HashMap<>();
+    // Callback Query
     boolean gotResponse = false;
     String responseMsg = "";
     String callbackQueryId = "";
     int responseMsgId = 0;
-    int replier = 0;
-    final String mongoDBUri;
+    long replier = 0;
+
+    // MongoDB Vars
+    final MongoClient mongoClient;
     final String databaseName = "Lucky-Gates-Bot-Database";
-    final String botControlDatabaseName = "All-Bots-Command-Centre";
     final String botName = "Lucky Gates Bot";
     final String idKey = "UserID", ticketKey = "Tickets";
-    final HashMap<Integer, String> playersBuyingTickets = new HashMap<>();
-    final HashMap<Long, TicketBuyer> ticketBuyers = new HashMap<>();
-    final HashMap<Long, ArrayList<Integer>> messagesForDeletion = new HashMap<>();
-    MongoClient mongoClient;
-    MongoDatabase mongoDatabase, botControlDatabase;
-    MongoCollection userDataCollection, botControlCollection;
-    boolean shouldRunGame;
-    boolean testMode = false;
-    long awakeChatId = -1001477389485L;
+    MongoCollection<Document> userDataCollection;
     Document botNameDoc, foundBotNameDoc;
-    boolean waitingToSwitchServers = false;
 
     // Constructor
-    public Lucky_Gates_Bot(String ourWallet, String CRTSContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
+    public Lucky_Gates_Bot(String ourWallet, String ANONContractAddress, BigInteger joinCost, int minimumNumberOfPlayers) {
         this.ourWallet = ourWallet;
-        this.CRTSContractAddress = CRTSContractAddress;
+        this.ANONContractAddress = ANONContractAddress;
         this.joinCost = joinCost;
         this.minimumNumberOfPlayers = minimumNumberOfPlayers;
-        mongoDBUri = "mongodb+srv://" + System.getenv("LuckyGatesMonoID") + ":" +
-                System.getenv("LuckyGatesMonoPass") + "@hellgatesbotcluster.zm0r5.mongodb.net/test";
-        MongoClientURI mongoClientURI = new MongoClientURI(mongoDBUri);
-        mongoClient = new MongoClient(mongoClientURI);
-        mongoDatabase = mongoClient.getDatabase(databaseName);
-        botControlDatabase = mongoClient.getDatabase(botControlDatabaseName);
-        userDataCollection = mongoDatabase.getCollection("UserTickets");
-        botControlCollection = botControlDatabase.getCollection("MemberValues");
+
+        ConnectionString connectionString = new ConnectionString(
+                "mongodb+srv://" + System.getenv("mongoID") + ":" +
+                        System.getenv("mongoPass") + "@hellgatesbotcluster.zm0r5.mongodb.net/test" +
+                        "?keepAlive=true&poolSize=30&autoReconnect=true&socketTimeoutMS=360000&connectTimeoutMS=360000"
+        );
+        MongoClientSettings mongoClientSettings = MongoClientSettings.builder()
+                .applyConnectionString(connectionString).retryWrites(true).writeConcern(WriteConcern.MAJORITY).build();
+        mongoClient = MongoClients.create(mongoClientSettings);
+        mongoClient.startSession();
+        userDataCollection = mongoClient.getDatabase(databaseName).getCollection("UserTickets");
         botNameDoc = new Document("botName", botName);
-        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+        foundBotNameDoc = userDataCollection.find(botNameDoc).first();
+        assert foundBotNameDoc != null;
         shouldRunGame = (boolean) foundBotNameDoc.get("shouldRunGame");
     }
 
 
-
     @Override
     public void onUpdateReceived(Update update) {
-        if(update.hasMessage()) {
-            long chat_id = update.getMessage().getChatId();
-            if(chat_id == getAdminChatId()) {
-                if(update.getMessage().hasText()) {
-                    String text = update.getMessage().getText();
-                    if(!shouldRunGame && text.equalsIgnoreCase("run")) {
+        if (update.hasMessage()) {
+            if (update.getMessage().hasText()) {
+                String chatId = update.getMessage().getChatId().toString();
+                String text = update.getMessage().getText();
+                if (chatId.equalsIgnoreCase(getAdminChatId())) {
+                    if (!shouldRunGame && text.equalsIgnoreCase("runBot")) {
                         shouldRunGame = true;
                         botNameDoc = new Document("botName", botName);
-                        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+                        foundBotNameDoc = userDataCollection.find(botNameDoc).first();
                         Bson updatedAddyDoc = new Document("shouldRunGame", shouldRunGame);
                         Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                        botControlCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
-                    } else if(text.startsWith("MinPlayers = ")) {
+                        userDataCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
+                    } else if (text.startsWith("MinPlayers = ")) {
                         try {
                             minimumNumberOfPlayers = Integer.parseInt(text.trim().split(" ")[2]);
-                            sendMessage(chat_id, "Min players set to " + minimumNumberOfPlayers);
+                            sendMessage(chatId, "Min players set to " + minimumNumberOfPlayers);
                         } catch (Exception e) {
-                            sendMessage(chat_id, "Invalid number of players");
+                            sendMessage(chatId, "Invalid number of players");
                         }
-                    }
-                    else if(text.equalsIgnoreCase("TestMode")) {
-                        testMode = true;
-                    } else if (text.equalsIgnoreCase("ExitTestMode")) {
-                        testMode = false;
-                    }
-                    else if(text.equalsIgnoreCase("Stop")) {
+                    } else if (text.equalsIgnoreCase("stopBot")) {
                         shouldRunGame = false;
                         botNameDoc = new Document("botName", botName);
-                        foundBotNameDoc = (Document) botControlCollection.find(botNameDoc).first();
+                        foundBotNameDoc = userDataCollection.find(botNameDoc).first();
                         Bson updatedAddyDoc = new Document("shouldRunGame", shouldRunGame);
                         Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
-                        botControlCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
-                    } else if(text.equalsIgnoreCase("StartServerSwitchProcess")) {
+                        userDataCollection.updateOne(foundBotNameDoc, updateAddyDocOperation);
+                    } else if (text.equalsIgnoreCase("StartServerSwitchProcess")) {
                         waitingToSwitchServers = true;
-                        sendMessage(getAdminChatId(), "From now, the bot won't accept new games or Ticket buy requests. Please use \"ActiveProcesses\" command " +
+                        sendMessage(chatId, "From now, the bot won't accept new games or Ticket buy requests. Please use \"ActiveProcesses\" command " +
                                 "to see how many games are active and then switch when there are no games active games and ticket buyers.");
+                    } else if (text.equalsIgnoreCase("ActiveProcesses")) {
+                        sendMessage(chatId, "Active Games : " + currentlyActiveGames.size() + "\nPeople buying tickets : " + playersBuyingTickets.size());
+                    } else if (text.equalsIgnoreCase("Commands")) {
+                        sendMessage(chatId, """
+                                runBot
+                                stopBot
+                                MinPlayers = __
+                                StartServerSwitchProcess
+                                ActiveProcesses
+                                Commands""");
                     }
-                    else if(text.equalsIgnoreCase("ActiveProcesses")) {
-                        sendMessage(getAdminChatId(), "Active Games : " + currentlyActiveGames.size() + "\nPeople buying tickets : " + playersBuyingTickets.size());
-                    } else if(text.equalsIgnoreCase("Commands")) {
-                        sendMessage(chat_id, "Run\nMinPlayers = __\nTestMode\nExitTestMode\nStop\nStartServerSwitchProcess" +
-                                "\nActiveProcesses\nCommands");
-                    }
-                    sendMessage(update.getMessage().getChatId(), "shouldRunGame = " + shouldRunGame + "\nTestMode = " + testMode +
-                            "\nMinPlayers = " + minimumNumberOfPlayers + "\nWaitingToSwitchServers = " + waitingToSwitchServers);
+                    sendMessage(chatId, "shouldRunGame = " + shouldRunGame + "\nMinPlayers = " + minimumNumberOfPlayers +
+                            "\nWaitingToSwitchServers = " + waitingToSwitchServers);
+                    // Can add special operation for admin here
                 }
-                // Can add special operation for admin here
+            }
+
+            if (!shouldRunGame) {
+                sendMessage(update.getMessage().getChatId().toString(), "Bot under maintenance. Please try again later.");
+                return;
             }
         }
-        if(!shouldRunGame) {
-            sendMessage(update.getMessage().getChatId(), "Bot under maintenance. Please try again later.");
-            return;
-        }
 
-        if(update.hasCallbackQuery()) {
+        if (update.hasCallbackQuery()) {
             update.getUpdateId();
             callbackQueryId = update.getCallbackQuery().getId();
             responseMsgId = update.getCallbackQuery().getMessage().getMessageId();
             responseMsg = update.getCallbackQuery().getData();
             replier = update.getCallbackQuery().getFrom().getId();
             gotResponse = true;
-        } else if(update.hasMessage()) {
-            int fromId = update.getMessage().getFrom().getId();
-            long chat_id = update.getMessage().getChatId();
-            String[] inputMsg = update.getMessage().getText().trim().split(" ");
-            if(waitingToSwitchServers) {
-                if(!inputMsg[0].startsWith("/receive") && !inputMsg[0].startsWith("/paywithticket")) {
-                    sendMessage(chat_id, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
+        } else if (update.hasMessage()) {
+            long fromId = update.getMessage().getFrom().getId();
+            String userName = update.getMessage().getFrom().getUserName();
+            String chatId = update.getMessage().getChatId().toString();
+            String[] inputMsg = update.getMessage().getText().trim().split("[ ]+");
+            if (waitingToSwitchServers) {
+                if (!inputMsg[0].startsWith("/receive") && !inputMsg[0].startsWith("/paywithticket")) {
+                    sendMessage(chatId, "The bot is not accepting any commands at the moment. The bot will be changing the servers soon. So a buffer time has been " +
                             "provided to complete all active games and Ticket purchases. This won't take much long. Please expect a 15-30 minute delay. This process has to be" +
                             "done after every 15 days.");
                     return;
                 }
             }
             switch (inputMsg[0]) {
-
-                case "/startgame":
-                case "/startgame@Lucky_Gates_Bot": {
-                    SendMessage sendMessage = new SendMessage();
-                    boolean shouldSend = true;
+                case "/startgame", "/startgame@Lucky_Gates_Bot" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if(chat_id != -1001487755827L && chat_id != -1001391125843L && chat_id != awakeChatId) { // chat_id != -1001487755827L
-                            sendMessage(chat_id, "This bot is only built to be used in CRTS GAME-SWAP CHANNEL");
+                        if (!(chatId.equalsIgnoreCase("-1001477389485") &&
+                                chatId.equalsIgnoreCase("-1001529888769"))) {
+                            sendMessage(chatId, "This bot is only built to be used in ANON INU GROUP");
                             return;
                         }
-                        if (currentlyActiveGames.containsKey(chat_id)) {
-                            Game game = currentlyActiveGames.get(chat_id);
-                            if(!game.hasGameStarted) {
-                                sendMessage.setText("A game is already running. Please wait for current game to end to start a new one or you can join the current game");
+
+                        if (currentlyActiveGames.containsKey(chatId)) {
+                            Game game = currentlyActiveGames.get(chatId);
+                            if (!game.hasGameStarted) {
+                                sendMessage(chatId, "A game is already running. Please wait for current game to end to start a new one or you can join the current game");
                             } else {
-                                shouldSend = false;
+                                sendMessage(chatId, "A game is already open. Use /join to join the current game");
                             }
                         } else {
                             Document document = new Document(idKey, fromId);
-                            Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                            if(foundAddyDoc != null) {
+                            Document foundAddyDoc = userDataCollection.find(document).first();
+                            if (foundAddyDoc != null) {
                                 try {
                                     int tickets = (int) foundAddyDoc.get(ticketKey);
-                                    if(tickets > 0) {
+                                    if (tickets > 0) {
                                         Game newGame;
-                                        sendMessage(chat_id, "Initiating a new Game!!!");
-                                        newGame = new Game(this, chat_id, fromId, CRTSContractAddress, ourWallet, joinCost, minimumNumberOfPlayers,
-                                                testMode);
+                                        sendMessage(chatId, "Initiating a new Game!!!");
+                                        newGame = new Game(this, chatId, fromId, ANONContractAddress, ourWallet, joinCost, minimumNumberOfPlayers);
                                         newGame.addPlayer(update.getMessage().getFrom());
-                                        currentlyActiveGames.put(chat_id, newGame);
-                                        messagesForDeletion.put(chat_id, new ArrayList<>());
-                                        SendAnimation sendAnimation = new SendAnimation();
-                                        sendAnimation.setAnimation("https://media.giphy.com/media/xThuW1VhsD5J6cJD4k/giphy.gif");
-                                        sendAnimation.setCaption("New game has been created. Please gather at least " + minimumNumberOfPlayers + " players (up to " +
-                                                "6 players maximum) within 6 minutes for game to begin. Players can use /join command to join the current game.");
-                                        sendAnimation.setChatId(chat_id);
-                                        execute(sendAnimation);
-                                        shouldSend = false;
+                                        currentlyActiveGames.put(chatId, newGame);
+                                        messagesForDeletion.put(chatId, new ArrayList<>());
+                                        sendMessage(chatId, "New game has been created. Please gather at least " + minimumNumberOfPlayers + " players (up to " +
+                                                        "6 players maximum) within 6 minutes for game to begin. Players can use /join command to join the current game.",
+                                                "https://media.giphy.com/media/xThuW1VhsD5J6cJD4k/giphy.gif");
                                     } else {
-                                        sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
-                                                "@"+ getBotUsername() + ") to buy tickets");
+                                        sendMessage(chatId, "You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                                "@" + getBotUsername() + ") to buy tickets");
                                     }
                                 } catch (Exception e) {
                                     e.printStackTrace();
-                                    shouldSend = false;
                                 }
                             } else {
-                                sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                sendMessage(chatId, "You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
                                         "@" + getBotUsername() + ") to buy tickets");
                                 document.append(ticketKey, 0);
                                 userDataCollection.insertOne(document);
                             }
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    if(shouldSend) {
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/join":
-                case "/join@Lucky_Gates_Bot": {
-                    SendMessage sendMessage = new SendMessage();
-                    boolean shouldSend = true;
+                case "/join", "/join@Lucky_Gates_Bot" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if (currentlyActiveGames.containsKey(chat_id)) {
-                            Game game = currentlyActiveGames.get(chat_id);
-                            if(game.hasGameStarted){
-                                shouldSend = false;
-                            } else {
+                        if (currentlyActiveGames.containsKey(chatId)) {
+                            Game game = currentlyActiveGames.get(chatId);
+                            if (!game.hasGameStarted) {
                                 Document document = new Document(idKey, fromId);
-                                Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                                if(foundAddyDoc != null) {
+                                Document foundAddyDoc = userDataCollection.find(document).first();
+                                if (foundAddyDoc != null) {
                                     int tickets = (int) foundAddyDoc.get(ticketKey);
-                                    if(tickets > 0) {
+                                    if (tickets > 0) {
                                         if (game.addPlayer(update.getMessage().getFrom())) {
-                                            sendMessage.setText("You have successfully join the game @" + update.getMessage().getFrom().getUserName());
+                                            sendMessage(chatId, "You have successfully join the game @" + userName);
                                         } else {
-                                            sendMessage.setText("You are already in the game @" + update.getMessage().getFrom().getUserName());
+                                            sendMessage(chatId, "You are already in the game @" + userName);
                                         }
                                     } else {
-                                        sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                        sendMessage(chatId, "You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
                                                 "@" + getBotUsername() + ") to buy tickets");
                                     }
                                 } else {
-                                    sendMessage.setText("You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
+                                    sendMessage(chatId, "You have 0 tickets. Cannot start or join a game. Use /buytickets (in private chat " +
                                             "@" + getBotUsername() + ") to buy tickets");
                                     document.append(ticketKey, 0);
                                     userDataCollection.insertOne(document);
                                 }
                             }
                         } else {
-                            sendMessage.setText("No Games Active. Start a new one to join");
+                            sendMessage(chatId, "No Games Active. Start a new one to join");
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    if(shouldSend) {
-                        sendMessage.setChatId(chat_id);
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/begin":
-                case "/begin@Lucky_Gates_Bot": {
-                    boolean shouldSend = true;
-                    SendMessage sendMessage = new SendMessage();
+                case "/begin", "/begin@Lucky_Gates_Bot" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if (currentlyActiveGames.containsKey(chat_id)) {
-                            Game game = currentlyActiveGames.get(chat_id);
-                            if(game.hasGameStarted){
-                                shouldSend = false;
-                            } else {
+                        if (currentlyActiveGames.containsKey(chatId)) {
+                            Game game = currentlyActiveGames.get(chatId);
+                            if (!game.hasGameStarted) {
                                 if (game.getGameInitiator() == fromId) {
-                                    if(game.beginGame()) {
-                                        shouldSend = false;
-                                    } else {
-                                        sendMessage.setText("Cannot begin the game. Not Enough Players!\nCurrent Number of Players : " + game.numberOfPlayers);
+                                    if (!game.beginGame()) {
+                                        sendMessage(chatId, "Cannot begin the game. Not Enough Players!\nCurrent Number of Players : "
+                                                + game.numberOfPlayers);
                                     }
                                 } else {
-                                    try {
-                                        SendAnimation sendAnimation = new SendAnimation();
-                                        sendAnimation.setAnimation("https://media.giphy.com/media/Lr9Y5rWFIpcsTSodLj/giphy.gif");
-                                        sendAnimation.setCaption("/begin command can only be used by the person who initiated the game or the game automatically " +
-                                                "start after the join time ends and minimum number of players are found");
-                                        sendAnimation.setChatId(chat_id);
-                                        execute(sendAnimation);
-                                        shouldSend = false;
-                                    } catch (Exception e) {
-                                        sendMessage.setText("/begin command can only be used by the person who initiated the game or the game automatically " +
-                                                "start after the join time ends and minimum number of players are found");
-                                    }
+                                    sendMessage(chatId, "/begin command can only be used by the person who initiated the game or the game automatically " +
+                                                    "start after the join time ends and minimum number of players are found",
+                                            "https://media.giphy.com/media/Lr9Y5rWFIpcsTSodLj/giphy.gif");
                                 }
                             }
                         } else {
-                            sendMessage.setText("No Games Active. Although you CAN use /Start command to start a new game XD");
+                            sendMessage(chatId, "No Games Active. Although you CAN use /Start command to start a new game XD");
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    if (shouldSend) {
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/mytickets":
-                case "/mytickets@Lucky_Gates_Bot": {
-                    if(currentlyActiveGames.containsKey(chat_id)) {
+                case "/mytickets", "/mytickets@Lucky_Gates_Bot" -> {
+                    if (currentlyActiveGames.containsKey(chatId)) {
                         return;
                     }
-                    SendMessage sendMessage = new SendMessage();
-                    if(!update.getMessage().getChat().isUserChat()) {
-                        sendMessage.setText("Please use /mytickets command in private chat");
+                    if (!update.getMessage().getChat().isUserChat()) {
+                        sendMessage(chatId, "Please use /mytickets command in private chat");
                     } else {
                         Document document = new Document(idKey, fromId);
-                        Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                        if(foundAddyDoc != null) {
+                        Document foundAddyDoc = userDataCollection.find(document).first();
+                        if (foundAddyDoc != null) {
                             int tickets = (int) foundAddyDoc.get(ticketKey);
-                            sendMessage.setText("You currently have " + tickets + " tickets");
+                            sendMessage(chatId, "You currently have " + tickets + " tickets");
                         } else {
                             document.append(ticketKey, 0);
                             userDataCollection.insertOne(document);
-                            sendMessage.setText("You have 0 tickets.");
+                            sendMessage(chatId, "You have 0 tickets.");
                         }
                     }
-                    sendMessage.setChatId(chat_id);
-                    try {
-                        execute(sendMessage);
-                    } catch (TelegramApiException e) {
-                        e.printStackTrace();
-                    }
-                    break;
                 }
-
-                case "/paywithticket":
-                case "/paywithticket@Lucky_Gates_Bot": {
-                    boolean shouldSend = true;
-                    SendMessage sendMessage = new SendMessage();
+                case "/paywithticket", "/paywithticket@Lucky_Gates_Bot" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if (currentlyActiveGames.containsKey(chat_id)) {
-                            Game game = currentlyActiveGames.get(chat_id);
-                            if(game.isAcceptingEntryPayment){
+                        if (currentlyActiveGames.containsKey(chatId)) {
+                            Game game = currentlyActiveGames.get(chatId);
+                            if (game.isAcceptingEntryPayment) {
                                 Document document = new Document(idKey, fromId);
-                                Document foundAddyDoc = (Document) userDataCollection.find(document).first();
-                                if(foundAddyDoc != null) {
+                                Document foundAddyDoc = userDataCollection.find(document).first();
+                                if (foundAddyDoc != null) {
                                     int tickets = (int) foundAddyDoc.get(ticketKey);
-                                    if(tickets > 0) {
-                                        if(game.payWithTicketForThisUser(fromId)){
+                                    if (tickets > 0) {
+                                        if (game.payWithTicketForThisUser(fromId)) {
                                             tickets--;
                                             Bson updatedAddyDoc = new Document(ticketKey, tickets);
                                             Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
                                             userDataCollection.updateOne(foundAddyDoc, updateAddyDocOperation);
-                                            shouldSend = false;
                                         }
                                     } else {
-                                        sendMessage.setText("@" + update.getMessage().getFrom().getUserName() + " You have 0 tickets. Cannot " +
+                                        sendMessage(chatId, "@" + userName + " You have 0 tickets. Cannot " +
                                                 "pay with tickets.");
                                     }
                                 } else {
-                                    sendMessage.setText("You have 0 tickets. Cannot pay with tickets");
+                                    sendMessage(chatId, "You have 0 tickets. Cannot pay with tickets");
                                     document.append(ticketKey, 0);
                                     userDataCollection.insertOne(document);
                                 }
                             } else {
-                                if(game.hasGameStarted) {
-                                    shouldSend = false;
-                                } else {
-                                    sendMessage.setText("Not accepting any entry Payments at the moment");
+                                if (!game.hasGameStarted) {
+                                    sendMessage(chatId, "Not accepting any entry Payments at the moment");
                                 }
                             }
                         } else {
-                            sendMessage.setText("@" + update.getMessage().getFrom().getUserName() + " No active game. Not accepting any " +
+                            sendMessage(chatId, "@" + userName + " No active game. Not accepting any " +
                                     "entry payment at the moment");
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    if (shouldSend) {
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/buytickets":
-                case "/buytickets@Lucky_Gates_Bot": {
-                    if(currentlyActiveGames.containsKey(chat_id)) {
-                        return;
-                    }
-                    SendMessage sendMessage = new SendMessage();
-                    boolean shouldSend = true;
-                    if(!update.getMessage().getChat().isUserChat()) {
-                        sendMessage.setText("Please use /buytickets command in private chat @" + getBotUsername());
+                case "/buytickets", "/buytickets@Lucky_Gates_Bot" -> {
+                    if (!update.getMessage().getChat().isUserChat()) {
+                        sendMessage(chatId, "Please use /buytickets command in private chat @" + getBotUsername());
                     } else {
                         if (inputMsg.length != 3) {
-                            sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets your_Tomo_Addy amount_To_Buy");
+                            sendMessage(chatId, """
+                                    Proper format to use this command is (Everything space separated) :
+
+                                    /buytickets your_BSC_Addy amount_To_Buy""");
                         } else {
                             if (playersBuyingTickets.containsKey(fromId)) {
-                                sendMessage.setText("Please complete your current purchase before starting a new purchase");
+                                sendMessage(chatId, "Please complete your current purchase before starting a new purchase");
                             } else {
                                 Document searchDoc = new Document(idKey, fromId);
-                                Document foundDoc = (Document) userDataCollection.find(searchDoc).first();
-                                if(!playersBuyingTickets.containsValue(inputMsg[1])) {
+                                Document foundDoc = userDataCollection.find(searchDoc).first();
+                                if (!playersBuyingTickets.containsValue(inputMsg[1])) {
                                     if (foundDoc != null) {
                                         int amountToBuy;
                                         try {
                                             amountToBuy = Integer.parseInt(inputMsg[2]);
-                                            TicketBuyer ticketBuyer = new TicketBuyer(this, chat_id, amountToBuy,
-                                                    inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                            TicketBuyer ticketBuyer = new TicketBuyer(this, chatId, amountToBuy,
+                                                    inputMsg[1], ourWallet, ANONContractAddress, joinCost);
                                             playersBuyingTickets.put(fromId, inputMsg[1]);
-                                            ticketBuyers.put(chat_id, ticketBuyer);
-                                            shouldSend = false;
+                                            ticketBuyers.put(chatId, ticketBuyer);
                                         } catch (Exception e) {
-                                            sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets " +
-                                                    "your_Tomo_Addy amount_To_Buy\n\n\nWhere amount has to be a number");
+                                            sendMessage(chatId, """
+                                                    Proper format to use this command is (Everything space separated) :
+
+                                                    /buytickets your_BSC_Addy amount_To_Buy
+
+
+                                                    Where amount has to be a number""");
                                         }
                                     } else {
                                         try {
@@ -430,107 +351,83 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                             int amountToBuy;
                                             try {
                                                 amountToBuy = Integer.parseInt(inputMsg[2]);
-                                                TicketBuyer ticketBuyer = new TicketBuyer(this, chat_id, amountToBuy,
-                                                        inputMsg[1], ourWallet, CRTSContractAddress, joinCost);
+                                                TicketBuyer ticketBuyer = new TicketBuyer(this, chatId, amountToBuy,
+                                                        inputMsg[1], ourWallet, ANONContractAddress, joinCost);
                                                 playersBuyingTickets.put(fromId, inputMsg[1]);
-                                                ticketBuyers.put(chat_id, ticketBuyer);
-                                                shouldSend = false;
+                                                ticketBuyers.put(chatId, ticketBuyer);
                                             } catch (Exception e) {
-                                                sendMessage.setText("Proper format to use this command is (Everything space separated) :\n\n/buytickets " +
-                                                        "your_Tomo_Addy amount_To_Buy\n\nWhere amount has to be a number");
+                                                sendMessage(chatId, """
+                                                        Proper format to use this command is (Everything space separated) :
+
+                                                        /buytickets your_BSC_Addy amount_To_Buy
+
+                                                        Where amount has to be a number""");
                                             }
                                         } catch (Exception e) {
-                                            sendMessage.setText("Invalid Format");
+                                            sendMessage(chatId, "Invalid Format");
                                         }
                                     }
                                 } else {
-                                    sendMessage.setText("This wallet is already being used for a purchase. Please use different wallet address");
+                                    sendMessage(chatId, "This wallet is already being used for a purchase. Please use different wallet address");
                                 }
                             }
                         }
                     }
-                    sendMessage.setChatId(chat_id);
-                    if(shouldSend) {
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/receive":
-                case "/receive@Lucky_Gates_Bot": {
-                    SendMessage sendMessage = new SendMessage();
-                    boolean shouldSend = true;
+                case "/receive", "/receive@Lucky_Gates_Bot" -> {
                     if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if (currentlyActiveGames.containsKey(chat_id)) {
-                            Game game = currentlyActiveGames.get(chat_id);
-                            if(game.isSendingPrize) {
-                                if(fromId == game.winnerId) {
-                                    if(inputMsg.length == 2) {
+                        if (currentlyActiveGames.containsKey(chatId)) {
+                            Game game = currentlyActiveGames.get(chatId);
+                            if (game.isSendingPrize) {
+                                if (fromId == game.winnerId) {
+                                    if (inputMsg.length == 2) {
                                         game.startPrizeSend(inputMsg[1]);
-                                        shouldSend = false;
                                     } else {
-                                        sendMessage.setText("Invalid Format. Proper Format :-\n/receive@Lucky_Gates_Bot TOMO_Address");
+                                        sendMessage(chatId, "Invalid Format. Proper Format :-\n/receive@Lucky_Gates_Bot TOMO_Address");
                                     }
                                 } else {
-                                    sendMessage.setText("You are not the winner. You cannot use this command");
+                                    sendMessage(chatId, "You are not the winner. You cannot use this command");
                                 }
                             } else {
-                                if(game.hasGameStarted) {
+                                if (game.hasGameStarted) {
                                     return;
                                 }
-                                sendMessage.setText("Cannot use this command at the moment. Use this command to receive prize after winning a game");
+                                sendMessage(chatId, "Cannot use this command at the moment. Use this command to receive prize after winning a game");
                             }
                         } else {
-                            sendMessage.setText("Cannot use this command at the moment. Use this command to receive prize after winning a game");
+                            sendMessage(chatId, "Cannot use this command at the moment. Use this command to receive prize after winning a game");
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    if(shouldSend) {
-                        try {
-                            execute(sendMessage);
-                        } catch (TelegramApiException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    break;
                 }
-
-                case "/transfertickets":
-                case "/transfertickets@Lucky_Gates_Bot": {
-                    if(currentlyActiveGames.containsKey(chat_id)) {
-                        Game game = currentlyActiveGames.get(chat_id);
-                        if(game.hasGameStarted) {
+                case "/transfertickets", "/transfertickets@Lucky_Gates_Bot" -> {
+                    if (currentlyActiveGames.containsKey(chatId)) {
+                        Game game = currentlyActiveGames.get(chatId);
+                        if (game.hasGameStarted) {
                             return;
                         }
                     }
-                    SendMessage sendMessage = new SendMessage();
-                    if(update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
-                        if(update.getMessage().isReply()) {
-                            if(inputMsg.length != 2) {
-                                sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
+                    if (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat()) {
+                        if (update.getMessage().isReply()) {
+                            if (inputMsg.length != 2) {
+                                sendMessage(chatId, "Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer");
                             } else {
                                 try {
                                     int amountToTransfer = Integer.parseInt(inputMsg[1]);
-                                    int FromId = fromId;
-                                    int ToId = update.getMessage().getReplyToMessage().getFrom().getId();
-                                    Document FromDocument = new Document(idKey, FromId);
+                                    int ToId = Math.toIntExact(update.getMessage().getReplyToMessage().getFrom().getId());
+                                    Document FromDocument = new Document(idKey, fromId);
                                     Document ToDocument = new Document(idKey, ToId);
-                                    Document foundFromDoc = (Document) userDataCollection.find(FromDocument).first();
-                                    Document foundToDoc = (Document) userDataCollection.find(ToDocument).first();
-                                    if(foundFromDoc != null) {
+                                    Document foundFromDoc = userDataCollection.find(FromDocument).first();
+                                    Document foundToDoc = userDataCollection.find(ToDocument).first();
+                                    if (foundFromDoc != null) {
                                         try {
                                             int tickets = (int) foundFromDoc.get(ticketKey);
-                                            if(tickets >= amountToTransfer) {
+                                            if (tickets >= amountToTransfer) {
                                                 Bson updatedAddyDoc = new Document(ticketKey, tickets - amountToTransfer);
                                                 Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
                                                 userDataCollection.updateOne(foundFromDoc, updateAddyDocOperation);
-                                                if(foundToDoc != null) {
+                                                if (foundToDoc != null) {
                                                     tickets = (int) foundToDoc.get(ticketKey);
                                                     updatedAddyDoc = new Document(ticketKey, tickets + amountToTransfer);
                                                     updateAddyDocOperation = new Document("$set", updatedAddyDoc);
@@ -539,12 +436,12 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                                     ToDocument.append(ticketKey, amountToTransfer);
                                                     userDataCollection.insertOne(ToDocument);
                                                 }
-                                                sendMessage.setText("Ticket Transfer Successful");
+                                                sendMessage(chatId, "Ticket Transfer Successful");
                                             } else {
-                                                sendMessage.setText("You don't have enough tickets");
+                                                sendMessage(chatId, "You don't have enough tickets");
                                             }
                                         } catch (Exception e) {
-                                            sendMessage.setText("Invalid. Bot Error");
+                                            sendMessage(chatId, "Invalid. Bot Error");
                                         }
                                     } else {
                                         try {
@@ -553,62 +450,52 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
                                         } catch (Exception e) {
                                             e.printStackTrace();
                                         }
-                                        sendMessage.setText("You don't have enough tickets");
+                                        sendMessage(chatId, "You don't have enough tickets");
                                     }
                                 } catch (Exception e) {
-                                    sendMessage.setText("Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer\n\n" +
-                                            "Amount has to be a number");
+                                    sendMessage(chatId, """
+                                            Proper format to use this command is : /transfertickets@Lucky_Gates_Bot amountToTransfer
+
+                                            Amount has to be a number""");
                                 }
                             }
                         } else {
-                            sendMessage.setText("This message has to be a reply type message quoting any message of the person to whom you want to " +
+                            sendMessage(chatId, "This message has to be a reply type message quoting any message of the person to whom you want to " +
                                     "transfer the tickets");
                         }
                     } else {
-                        sendMessage.setText("This command can only be run in a group!!!");
+                        sendMessage(chatId, "This command can only be run in a group!!!");
                     }
-                    sendMessage.setChatId(chat_id);
-                    try {
-                        execute(sendMessage);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                    break;
                 }
-
-                case "/addtickets":
-                case "/addtickets@Lucky_Gates_Bot": {
-                    if(fromId != getAdminChatId()) {
-                        return;
-                    } else {
-                        if(update.getMessage().isReply()) {
-                            int Id = update.getMessage().getReplyToMessage().getFrom().getId();
+                case "/addtickets", "/addtickets@Lucky_Gates_Bot" -> {
+                    if (getAdminChatId().equalsIgnoreCase(String.valueOf(fromId))) {
+                        if (update.getMessage().isReply()) {
+                            int Id = Math.toIntExact(update.getMessage().getReplyToMessage().getFrom().getId());
                             Document document = new Document(idKey, Id);
-                            Document foundDoc = (Document) userDataCollection.find(document).first();
+                            Document foundDoc = userDataCollection.find(document).first();
                             int ticks = Integer.parseInt(update.getMessage().getText().trim().split(" ")[1]);
-                            if(foundDoc != null) {
+                            if (foundDoc != null) {
                                 try {
                                     int tickets = (int) foundDoc.get(ticketKey) + ticks;
                                     Bson updatedAddyDoc = new Document(ticketKey, tickets);
                                     Bson updateAddyDocOperation = new Document("$set", updatedAddyDoc);
                                     userDataCollection.updateOne(foundDoc, updateAddyDocOperation);
                                 } catch (Exception e) {
-                                    sendMessage(chat_id, "Invalid Format");
+                                    sendMessage(chatId, "Invalid Format");
                                 }
                             } else {
                                 try {
                                     document.append(ticketKey, ticks);
                                     userDataCollection.insertOne(document);
                                 } catch (Exception e) {
-                                    sendMessage(chat_id, "Invalid Format");
+                                    sendMessage(chatId, "Invalid Format");
                                 }
                             }
-                            sendMessage(chat_id, "Successfully Added " + ticks + " Ticket");
+                            sendMessage(chatId, "Successfully Added " + ticks + " Ticket");
                         } else {
-                            sendMessage(chat_id, "This message has to be a reply type message");
+                            sendMessage(chatId, "This message has to be a reply type message");
                         }
                     }
-                    break;
                 }
             }
         }
@@ -625,14 +512,19 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
     }
 
 
-    public void sendMessage(long chat_id, String msg, String... url) {
-        if(url.length == 0) {
+    public void sendMessage(String chat_id, String msg, String... url) {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        if (url.length == 0) {
             SendMessage sendMessage = new SendMessage();
             sendMessage.setText(msg);
-            sendMessage.setChatId(chat_id);
+            sendMessage.setChatId(String.valueOf(chat_id));
             try {
                 int messageId = execute(sendMessage).getMessageId();
-                if(messagesForDeletion.containsKey(chat_id)) {
+                if (messagesForDeletion.containsKey(chat_id)) {
                     messagesForDeletion.get(chat_id).add(messageId);
                 }
             } catch (Exception e) {
@@ -640,17 +532,17 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
             }
         } else {
             ArrayList<Integer> index = new ArrayList<>();
-            for(int i = 0; i < url.length; i++) {
+            for (int i = 0; i < url.length; i++) {
                 index.add(i);
             }
             Collections.shuffle(index);
             SendAnimation sendAnimation = new SendAnimation();
-            sendAnimation.setAnimation(url[index.get(0)]);
+            sendAnimation.setAnimation(new InputFile().setMedia(url[(int) (Math.random() * (url.length))]));
             sendAnimation.setCaption(msg);
-            sendAnimation.setChatId(chat_id);
+            sendAnimation.setChatId(String.valueOf(chat_id));
             try {
                 int messageId = execute(sendAnimation).getMessageId();
-                if(messagesForDeletion.containsKey(chat_id)) {
+                if (messagesForDeletion.containsKey(chat_id)) {
                     messagesForDeletion.get(chat_id).add(messageId);
                 }
             } catch (Exception e) {
@@ -659,15 +551,23 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
     }
 
-    public void sendMessageWithButton(long chat_id, String msg, String[] buttonText, String[] buttonValues) {
+    public void sendMessageWithButton(String chat_id, String msg, String[] buttonText, String[] buttonValues) {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         SendMessage sendMessage = new SendMessage();
         sendMessage.setText(msg);
-        sendMessage.setChatId(chat_id);
+        sendMessage.setChatId(String.valueOf(chat_id));
         List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
         List<InlineKeyboardButton> rowInLine = new ArrayList<>();
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-        for(int i = 0; i < buttonText.length; i++) {
-            rowInLine.add(new InlineKeyboardButton().setText(buttonText[i]).setCallbackData(buttonValues[i]));
+        for (int i = 0; i < buttonText.length; i++) {
+            InlineKeyboardButton inlineKeyboardButton = new InlineKeyboardButton();
+            inlineKeyboardButton.setText(buttonText[i]);
+            inlineKeyboardButton.setCallbackData(buttonValues[i]);
+            rowInLine.add(inlineKeyboardButton);
         }
         rowsInLine.add(rowInLine);
         inlineKeyboardMarkup.setKeyboard(rowsInLine);
@@ -680,9 +580,15 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
     }
 
-    public void sendEditMessage(long chat_id, String msg, int msg_Id) {
-        EditMessageText editMessageText = new EditMessageText().setMessageId(msg_Id);
-        editMessageText.setChatId(chat_id);
+    public void sendEditMessage(String chat_id, String msg, int msg_Id) {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        EditMessageText editMessageText = new EditMessageText();
+        editMessageText.setMessageId(msg_Id);
+        editMessageText.setChatId(String.valueOf(chat_id));
         editMessageText.setText(msg);
         AnswerCallbackQuery answerCallbackQuery = new AnswerCallbackQuery();
         answerCallbackQuery.setCallbackQueryId(callbackQueryId);
@@ -696,7 +602,7 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
 
     }
 
-    public void setGotResponseFalse(long chat_id, String msg) {
+    public void setGotResponseFalse(String chat_id, String msg) {
         sendEditMessage(chat_id, msg, responseMsgId);
         gotResponse = false;
         responseMsgId = 0;
@@ -722,19 +628,19 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
     }
 
-    public void deleteGame(long chat_id) {
+    public void deleteGame(String chat_id) {
         deleteMessages(chat_id);
         currentlyActiveGames.remove(chat_id);
     }
 
-    public long getAdminChatId() {
-        return 607901021;
+    public String getAdminChatId() {
+        return "607901021";
     }
 
-    public void refund1Ticket(int playerId) {
+    public void refund1Ticket(long playerId) {
         Document fetchDocument = new Document(idKey, playerId);
-        Document gotDocument = (Document) userDataCollection.find(fetchDocument).first();
-        if(gotDocument != null) {
+        Document gotDocument = userDataCollection.find(fetchDocument).first();
+        if (gotDocument != null) {
             int tickets = (int) gotDocument.get(ticketKey);
             tickets++;
             Bson replaceDoc = new Document(ticketKey, tickets);
@@ -743,26 +649,26 @@ public class Lucky_Gates_Bot extends org.telegram.telegrambots.bots.TelegramLong
         }
     }
 
-    public void playerTicketPurchaseEnded(int playerId, int numberOfTicketsToBuy, boolean didPay) {
-        if(didPay) {
+    public void playerTicketPurchaseEnded(String playerId, int numberOfTicketsToBuy, boolean didPay) {
+        if (didPay) {
             Document document = new Document(idKey, playerId);
-            Document foundDocument = (Document) userDataCollection.find(document).first();
-            if(foundDocument != null) {
+            Document foundDocument = userDataCollection.find(document).first();
+            if (foundDocument != null) {
                 int tickets = (int) foundDocument.get(ticketKey);
                 Bson updateDoc = new Document(ticketKey, (numberOfTicketsToBuy + tickets));
                 Bson updateDocOperation = new Document("$set", updateDoc);
                 userDataCollection.updateOne(foundDocument, updateDocOperation);
             }
         }
-        playersBuyingTickets.remove((Integer) playerId);
-        ticketBuyers.remove((long) playerId);
+        playersBuyingTickets.remove(Long.valueOf(playerId));
+        ticketBuyers.remove(playerId);
     }
 
-    private void deleteMessages(long chat_id) {
-        ArrayList<Integer> deletion = messagesForDeletion.get(chat_id);
+    private void deleteMessages(String chatId) {
+        ArrayList<Integer> deletion = messagesForDeletion.get(chatId);
         while (deletion.size() > 5) {
             DeleteMessage deleteMessage = new DeleteMessage();
-            deleteMessage.setChatId(chat_id);
+            deleteMessage.setChatId(chatId);
             deleteMessage.setMessageId(deletion.get(0));
             try {
                 execute(deleteMessage);

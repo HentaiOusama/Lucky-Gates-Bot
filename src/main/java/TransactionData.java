@@ -4,5 +4,5 @@ public class TransactionData {
     String methodName;
     String fromAddress;
     String toAddress;
-    BigInteger value;
+    BigInteger value, blockNumber;
 }
